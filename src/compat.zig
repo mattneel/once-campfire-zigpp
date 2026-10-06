@@ -235,7 +235,7 @@ fn base64Encode(allocator: Allocator, bytes: []const u8, encoding: Encoding) ![]
     const result = try allocator.alloc(u8, codec.calcSize(bytes.len));
     return codec.encode(result, bytes);
 }
-fn base64Decode(allocator: Allocator, encoded: []const u8) ![]u8 {
+fn base64Decode(allocator: Allocator, encoded: []const u8) error{ OutOfMemory, InvalidSignature }![]u8 {
     // Accept both alphabets without copying the ordinary standard or URL-safe cases.
     const url = std.mem.indexOfAny(u8, encoded, "-_") != null;
     if (url and std.mem.indexOfAny(u8, encoded, "+/") != null) {
