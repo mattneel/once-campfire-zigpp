@@ -172,6 +172,17 @@ pub const Secrets = struct {
         const v = verifyValue(arena.allocator(), key, "variation", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(err);
         return try jsonEncode(allocator, v, true);
     }
+    pub fn signDiskKey(self: *const Secrets, allocator: Allocator, ordered_compact_json: []const u8, expires_unix: i64) ![]const u8 {
+        const metadata = try envelope(allocator, ordered_compact_json, "blob_key", expires_unix, false, true);
+        defer allocator.free(metadata);
+        return sign(allocator, metadata, &self.storage_key, .sha1, .standard);
+    }
+    pub fn verifyDiskKey(self: *const Secrets, allocator: Allocator, key: []const u8, now_unix: i64) !?[]const u8 {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const v = verifyValue(arena.allocator(), key, "blob_key", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(err);
+        return try jsonEncode(allocator, v, true);
+    }
     pub fn attachableSgid(self: *const Secrets, allocator: Allocator, model_name: []const u8, id: i64) ![]const u8 {
         const gid = try std.fmt.allocPrint(allocator, "gid://campfire/{s}/{d}?expires_in", .{ model_name, id });
         defer allocator.free(gid);
