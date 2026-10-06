@@ -1,0 +1,28 @@
+{
+  "schema": "campfire-native-browser-smoke/v1",
+  "base": "http://127.0.0.1:4410",
+  "browser": "managed Chromium",
+  "browser_smoke_passed": true,
+  "whole_campfire_suite_passed": false,
+  "workflows": {
+    "password_login": "pass; real UI credentials",
+    "room_and_sidebar_navigation": "pass; All Pets to All Talk through Turbo",
+    "infinite_scroll": "pass; 40 to 80 rendered messages, first ID 933434561",
+    "post_message_http": "pass; authenticated same-origin browser fetch, status 200, actual Turbo append body",
+    "persisted_reload": "pass; message 933434642 appears after full room reload",
+    "search_ui": "pass; real search form submission returns exactly message 933434642",
+    "composer_send_button": "unsupported; upstream connectivity monitor disables controls without Cable"
+  },
+  "post": {
+    "room_id": 486777696,
+    "message_id": 933434642,
+    "marker": "zigppbrowser9de4845f4bc94ae49cc488e478b6b534",
+    "content_type": "text/vnd.turbo-stream.html; charset=utf-8"
+  },
+  "search_url": "http://127.0.0.1:4410/searches?q=zigppbrowser9de4845f4bc94ae49cc488e478b6b534",
+  "rendered_stylesheet_count": 32,
+  "javascript_errors": [],
+  "console_errors": [],
+  "room_screenshot": "native-room.webp",
+  "scope": "Real native HTTP application and visible read/search workflows; not a complete Campfire UI port. No forced connectivity state or fake Cable response."
+}

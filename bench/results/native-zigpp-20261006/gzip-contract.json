@@ -1,0 +1,174 @@
+{
+  "gzip_workload_smoke_passed": true,
+  "real_post_persistence_and_dom_parity": true,
+  "results": [
+    {
+      "target": "native",
+      "identity": {
+        "path": "/rooms/486777696",
+        "encoding": "identity",
+        "wire_bytes": 416514,
+        "decoded_bytes": 416514,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/rooms/486777696",
+        "encoding": "gzip",
+        "wire_bytes": 21369,
+        "decoded_bytes": 416514,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "native",
+      "identity": {
+        "path": "/rooms/486777696/messages?before=933434569",
+        "encoding": "identity",
+        "wire_bytes": 384164,
+        "decoded_bytes": 384164,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/rooms/486777696/messages?before=933434569",
+        "encoding": "gzip",
+        "wire_bytes": 12520,
+        "decoded_bytes": 384164,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "native",
+      "identity": {
+        "path": "/users/me/sidebar",
+        "encoding": "identity",
+        "wire_bytes": 29712,
+        "decoded_bytes": 29712,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/users/me/sidebar",
+        "encoding": "gzip",
+        "wire_bytes": 5820,
+        "decoded_bytes": 29712,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "native",
+      "identity": {
+        "path": "/searches?q=coffee",
+        "encoding": "identity",
+        "wire_bytes": 149532,
+        "decoded_bytes": 149532,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/searches?q=coffee",
+        "encoding": "gzip",
+        "wire_bytes": 9622,
+        "decoded_bytes": 149532,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "native",
+      "gzip_post": {
+        "path": "/rooms/201306877/messages",
+        "encoding": "gzip",
+        "wire_bytes": 2035,
+        "decoded_bytes": 9813,
+        "status": 200
+      },
+      "message_id": 933434641,
+      "real_turbo_message": true
+    },
+    {
+      "target": "rust",
+      "identity": {
+        "path": "/rooms/486777696",
+        "encoding": "identity",
+        "wire_bytes": 416353,
+        "decoded_bytes": 416353,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/rooms/486777696",
+        "encoding": "gzip",
+        "wire_bytes": 24290,
+        "decoded_bytes": 416353,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "rust",
+      "identity": {
+        "path": "/rooms/486777696/messages?before=933434569",
+        "encoding": "identity",
+        "wire_bytes": 383844,
+        "decoded_bytes": 383844,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/rooms/486777696/messages?before=933434569",
+        "encoding": "gzip",
+        "wire_bytes": 16158,
+        "decoded_bytes": 383844,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "rust",
+      "identity": {
+        "path": "/users/me/sidebar",
+        "encoding": "identity",
+        "wire_bytes": 30763,
+        "decoded_bytes": 30763,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/users/me/sidebar",
+        "encoding": "gzip",
+        "wire_bytes": 5910,
+        "decoded_bytes": 30763,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "rust",
+      "identity": {
+        "path": "/searches?q=coffee",
+        "encoding": "identity",
+        "wire_bytes": 149623,
+        "decoded_bytes": 149623,
+        "status": 200
+      },
+      "gzip": {
+        "path": "/searches?q=coffee",
+        "encoding": "gzip",
+        "wire_bytes": 9766,
+        "decoded_bytes": 149623,
+        "status": 200
+      },
+      "decoded_dom_equal": true
+    },
+    {
+      "target": "rust",
+      "gzip_post": {
+        "path": "/rooms/201306877/messages",
+        "encoding": "gzip",
+        "wire_bytes": 2030,
+        "decoded_bytes": 9804,
+        "status": 200
+      },
+      "message_id": 933434641,
+      "real_turbo_message": true
+    }
+  ]
+}

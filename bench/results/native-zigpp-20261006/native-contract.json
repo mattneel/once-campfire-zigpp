@@ -1,0 +1,1803 @@
+{
+  "schema": "campfire-native-http-contract/v1",
+  "scope": "five-path leaderboard conformance subset with authentication/history prerequisites",
+  "whole_campfire_suite_passed": false,
+  "gate_passed": true,
+  "run_id": "nativegate6dcf68ca5b53459eaa747fb1be472ddd",
+  "base": "http://127.0.0.1:4410",
+  "oracle": "http://127.0.0.1:4400",
+  "oracle_image_required": "ccece30e8e160d8c3e05bf395ee55ee35962093b",
+  "normalization": [
+    "server origin",
+    "CSRF masks",
+    "CSP nonce",
+    "new message timestamps only",
+    "non-content serialization indentation and attribute order"
+  ],
+  "coverage": {
+    "GET /rooms/:id": [
+      "full/frame DOM",
+      "membership denial",
+      "last/around windows",
+      "wrong-room deep links"
+    ],
+    "GET /rooms/:id/messages": [
+      "exact 40 before/after/last ordered IDs",
+      "boundary 204",
+      "wrong-room 404",
+      "conditional GET"
+    ],
+    "GET /users/me/sidebar": [
+      "full/frame DOM",
+      "visible memberships",
+      "shared name/direct timestamp order",
+      "placeholders"
+    ],
+    "GET /searches?q=...": [
+      "reachable-only results",
+      "exact IDs/order/content",
+      "no history mutation",
+      "frame DOM",
+      "posted-message discoverability"
+    ],
+    "POST /rooms/:id/messages": [
+      "actual Turbo append body",
+      "persistent message/richtext/FTS",
+      "room touch/unread callbacks",
+      "read-back",
+      "unsafe consumer richtext"
+    ],
+    "prerequisites": [
+      "fresh isolated seed copies",
+      "real password login/rejection",
+      "Rails-issued/forged cookie",
+      "refresh/logout",
+      "POST/DELETE search history"
+    ]
+  },
+  "not_covered": [
+    "whole Campfire suite",
+    "websocket broadcasts",
+    "push delivery/jobs",
+    "uploads",
+    "edit/delete/boost mutation",
+    "browser visual behavior",
+    "performance"
+  ],
+  "scenarios": [
+    {
+      "scenario": "prerequisites",
+      "source_anchors": [
+        "parity/seeds/default.rb:151-165",
+        "vectors/campfire_sessions.json"
+      ],
+      "status": "pass",
+      "evidence": {
+        "seed": "/home/autark/src/once-campfire-zigpp/parity/.seed/default",
+        "native_db": "/home/autark/work/campfire/native/storage/db/production.sqlite3",
+        "oracle_db": "/home/autark/work/campfire/baseline/native/storage/db/production.sqlite3",
+        "watercooler_rows": 131,
+        "canonical_label_count": 252,
+        "oracle_image_required": "ccece30e8e160d8c3e05bf395ee55ee35962093b"
+      },
+      "elapsed_seconds": 0.005984,
+      "requests": []
+    },
+    {
+      "scenario": "authentication",
+      "source_anchors": [
+        "crates/campfire/src/app/tests.rs:a_rails_issued_session_cookie_authenticates",
+        "crates/campfire/src/controllers/sessions.rs:create/destroy"
+      ],
+      "status": "pass",
+      "evidence": {
+        "password_login": true,
+        "password_rejection": true,
+        "rails_cookie": true,
+        "forged_and_tampered_denied": true,
+        "refresh_once": true,
+        "logout": true
+      },
+      "elapsed_seconds": 0.782365,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/session/new",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 24436,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "cf9fe707fa298318110669827a0fb1b3ceee29612bccec5abf89244c3030f594"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 24681,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3f9bb81c2ea7337a576cdc7015590b1c9dbe7cb94bebcb94ef0b867fac55e0d4"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/session",
+          "user": "david",
+          "native": {
+            "status": 401,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 24889,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "73fc9f8c6fb631f90e5a219b650eaa93ef640a6e39ca90e194aa849ba9cc8121"
+          },
+          "oracle": {
+            "status": 401,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 25185,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c1829cd1eb43c1c097e1282c3af260c597d2df1570cefbe695fc5526a868e20f"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/session",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416514,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f77029d683658754d2c94816b178dc6f5dd922ccb5d4bcdb3410c601d99f553c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416353,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3b8299170d7926cdae7bf674bfb654de08164ca127abea4ce0f1daf4ffcf6b58"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416514,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f77029d683658754d2c94816b178dc6f5dd922ccb5d4bcdb3410c601d99f553c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416353,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3b8299170d7926cdae7bf674bfb654de08164ca127abea4ce0f1daf4ffcf6b58"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/session",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/session/new",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "room_access",
+      "source_anchors": [
+        "crates/campfire/src/controllers/rooms/tests.rs:inaccessible_rooms_redirect_home_with_an_alert",
+        "crates/campfire/src/controllers/messages/tests.rs:index_pages_with_conditional_gets"
+      ],
+      "status": "pass",
+      "evidence": {
+        "denied_rooms": [
+          [
+            "david",
+            340026324
+          ],
+          [
+            "kevin",
+            186869642
+          ]
+        ],
+        "authorized_control": 340026324
+      },
+      "elapsed_seconds": 0.329501,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/rooms/340026324",
+          "user": "david",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/340026324/messages",
+          "user": "david",
+          "native": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          },
+          "oracle": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/186869642",
+          "user": "kevin",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/186869642/messages",
+          "user": "kevin",
+          "native": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          },
+          "oracle": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/340026324",
+          "user": "kevin",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 43292,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "d9188d4e0710f495453bb245cd721675c62bab2edc9b48785f416d994a471d5e"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 43541,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "87ce5cb01cbc7967e6e4b4738a5247eca095f0df6d0ce6fc024fb9a3018cf38c"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "room_dom",
+      "source_anchors": [
+        "crates/campfire/src/controllers/rooms/tests.rs:show_renders_the_room_and_remembers_it",
+        "crates/campfire/src/controllers/presenters/accounts/tests.rs:profile_sidebar_and_user_pages"
+      ],
+      "status": "pass",
+      "evidence": {
+        "full_and_frame_dom": [
+          {
+            "room": 486777696,
+            "message_ids": [
+              933434601,
+              933434602,
+              933434603,
+              933434604,
+              933434605,
+              933434606,
+              933434607,
+              933434608,
+              933434609,
+              933434610,
+              933434611,
+              933434612,
+              933434613,
+              933434614,
+              933434615,
+              933434616,
+              933434617,
+              933434618,
+              933434619,
+              933434620,
+              933434621,
+              933434622,
+              933434623,
+              933434624,
+              933434625,
+              933434626,
+              933434627,
+              933434628,
+              933434629,
+              933434481,
+              303968118,
+              749124092,
+              684468941,
+              366357198,
+              746403085,
+              217777555,
+              421488677,
+              925779126,
+              933434630,
+              136976342
+            ]
+          },
+          {
+            "room": 654632876,
+            "message_ids": [
+              933434482,
+              933434483,
+              933434484,
+              933434485,
+              933434486,
+              933434487,
+              933434488,
+              933434489,
+              933434490,
+              933434491,
+              933434492,
+              933434493,
+              933434494,
+              933434495,
+              933434496,
+              933434497,
+              933434498,
+              933434499,
+              933434500,
+              933434501,
+              933434502,
+              933434503,
+              933434504,
+              933434505,
+              933434506,
+              933434507,
+              933434508,
+              933434509,
+              309456473,
+              908005739,
+              607264868
+            ]
+          },
+          {
+            "room": 186869642,
+            "message_ids": [
+              933434631,
+              933434632,
+              933434633
+            ]
+          },
+          {
+            "room": 699448326,
+            "message_ids": []
+          }
+        ],
+        "includes_seeded_richtext_boosts_attachments_and_grouping": true
+      },
+      "elapsed_seconds": 0.465999,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416930,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "196afe2ef94543ba8657b8ac01af5e6d3aee8dd155bd180f4586311d10ca7164"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416820,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "d3c027b598b6168bbe0872058a7705d103799c9a30a4db146ab207442ba55846"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 386960,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "ab5f512c2449b2f22cf69e88fe2bcc035d063785bf89f31ac9cc5abe1d5315a6"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 386619,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "9c4f1bdad3cc6319fb1cca1e43e5378918ced0d5843723f555d77112a8536cdd"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/654632876",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 356347,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c59645c9d01ec064a437c8550607cd29bccf74063e31f04df608204674395d77"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 356235,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "85d2a37d080bbcbedddf40088eae544e7d914b863bb87589a1f8d83ed8e456c5"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/654632876",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 326791,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "caf55a95c9aea04313f74b3c6a56324a54de23fb58407f42cb0385f327630ffe"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 326499,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "d197a9d712b0f79d79f923aed4e63fd607703e95b69b8bce6b568421543ffe7e"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/186869642",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 62048,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "bbd8d8d91c9573a4eefa8b3fa9917ec6596433bb551d390c99adc2a3bc1ed814"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 62228,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f515c9172ff79684795bb5b4364381dd5f03029489e48531b463a7a52fb6a408"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/186869642",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 32443,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3416ea78565a6b8ec522aeef3778e7606040b55b1ed87715338a9c68253b1586"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 32443,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "ef50742ccd588af83d8444b21be3f78c7a21e958f1563e7176f0f4d7aa79bbcd"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/699448326",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 33180,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "23fa0448ceb0d5e17dd1754b95aa27f9fd9aa4e64b677125c5b456de1d3ddb3e"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 33387,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "eda1f9c3506159aecfd7acce7482322e6c4b8d74b6ee17c333651635320d7c7a"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/699448326",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 3618,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c27f9e9371d9a9932fa85fd7b6a6f6173ea9273fc1617539a5ae8be730900d53"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 3645,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "7ee04021d01a90f29f5ae4eaa84945b2fc7439046c40e933a6fe95d6f0990e3d"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "pagination",
+      "source_anchors": [
+        "crates/campfire/src/controllers/rooms/tests.rs:show_at_a_message_pages_around_it",
+        "crates/campfire/src/controllers/messages/tests.rs:index_pages_with_conditional_gets",
+        "crates/db/src/tests/message_test.rs:pagination",
+        "parity/seeds/default.rb:151-165"
+      ],
+      "status": "pass",
+      "evidence": {
+        "exact_window_counts": {
+          "before": 40,
+          "after": 40,
+          "last": 40,
+          "before_precedence": 40,
+          "around_933434570": 81,
+          "around_933434510": 41,
+          "around_136976342": 41
+        },
+        "wrong_room_boundary_404": true,
+        "wrong_room_deep_link_fallback": true,
+        "conditional_get": true
+      },
+      "elapsed_seconds": 0.679232,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=933434570",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 384164,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e8cdf380f26bdcbae70bf0817a62f9f3f07b2191d2c6dc5101de835e1664cd21"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 383844,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3a0d9958e0e41ed2a0623298be7fa594a7db01346e2096f61b96d84bc4cad181"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?after=933434570",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 384164,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "643fe35cabf171136da86864f6bbfa1dc85a20ddd1cf2f6b4476f3cdf0f7236c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 383844,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "21a27dfc6ce11362c02719389579f74e3ccd3f4a91155cb27c331264bfa1b47f"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 383142,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "4ff39135d336b6c0a89a699f74f7d204c6396bcc0cf4021fbba41ef1e638d621"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 382814,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "63968eae7b9687518ba62b5855a81324cccfe6bb6fd1d07cff004fc23daf95b8"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=933434570&after=136976342",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 384164,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e8cdf380f26bdcbae70bf0817a62f9f3f07b2191d2c6dc5101de835e1664cd21"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 383844,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3a0d9958e0e41ed2a0623298be7fa594a7db01346e2096f61b96d84bc4cad181"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/@933434570",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 811507,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "fc30e41a1eeb0a8b729cdff4f25bbce9569d53faddeccc3f44e2142976ba971d"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 810985,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "52b6f55c714fbffdf72d5d9a5cf0e2a4e97a2efc11fc4d2cef13f485aa17a00b"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/@933434510",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 427143,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "714af3146b77eff4843d0c37cf2e1a5178c91ecd58c46719b09ff14abd8dbe87"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 426981,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c36ea44fdc672002dfc587ff4ec3cc24d3f083f1ea2486a8d87241d52424b13d"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/@136976342",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 426121,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "ee449d87cf10c8fbb72c66b0ba291b938bdca659c51011aa76bbafec75b1516c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 425951,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "064fd46744fc538f8aedfd747dd1d722c8b1f0c71f9f2ac7d19b335c98b37e80"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=933434510",
+          "user": "david",
+          "native": {
+            "status": 204,
+            "content_type": null,
+            "location": null,
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 204,
+            "content_type": null,
+            "location": null,
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?after=136976342",
+          "user": "david",
+          "native": {
+            "status": 204,
+            "content_type": null,
+            "location": null,
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 204,
+            "content_type": null,
+            "location": null,
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=933434631",
+          "user": "david",
+          "native": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          },
+          "oracle": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?after=933434631",
+          "user": "david",
+          "native": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          },
+          "oracle": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=0",
+          "user": "david",
+          "native": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          },
+          "oracle": {
+            "status": 404,
+            "content_type": "text/html; charset=UTF-8",
+            "location": null,
+            "bytes": 4237,
+            "x_version": null,
+            "x_rev": null,
+            "sha256": "6e04b180174f49e36df7d4c24e65e0545575d68d69aadf094e4c697db299c477"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/@933434631",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416514,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f77029d683658754d2c94816b178dc6f5dd922ccb5d4bcdb3410c601d99f553c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416353,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3b8299170d7926cdae7bf674bfb654de08164ca127abea4ce0f1daf4ffcf6b58"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/@0",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416514,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f77029d683658754d2c94816b178dc6f5dd922ccb5d4bcdb3410c601d99f553c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 416353,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3b8299170d7926cdae7bf674bfb654de08164ca127abea4ce0f1daf4ffcf6b58"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/486777696/messages?before=933434570",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 384164,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e8cdf380f26bdcbae70bf0817a62f9f3f07b2191d2c6dc5101de835e1664cd21"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 383844,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3a0d9958e0e41ed2a0623298be7fa594a7db01346e2096f61b96d84bc4cad181"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "sidebar",
+      "source_anchors": [
+        "crates/campfire/src/controllers/presenters/accounts/tests.rs:profile_sidebar_and_user_pages",
+        "crates/campfire/src/controllers/presenters/accounts.rs:sidebar"
+      ],
+      "status": "pass",
+      "evidence": {
+        "membership_lists": [
+          {
+            "user": "david",
+            "direct_ids": [
+              699448325,
+              699448329,
+              186869642
+            ],
+            "shared_ids": [
+              104393281,
+              486777696,
+              699448328,
+              654632876,
+              201306877,
+              699448326
+            ]
+          },
+          {
+            "user": "kevin",
+            "direct_ids": [
+              699448325,
+              699448329,
+              340026324
+            ],
+            "shared_ids": [
+              699448327,
+              654632876,
+              201306877,
+              699448326
+            ]
+          }
+        ],
+        "full_frame_and_placeholder_dom_parity": true
+      },
+      "elapsed_seconds": 0.021435,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/users/me/sidebar",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 29712,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "6af6336981eb5eb9765eef6eb9807d97fbb670c4f97490a827b83792236eeefa"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 30763,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "6f81d6709e9ceb76a6df6d7405dfd280d0b0d57d9370019bfaf18b73ef1a276c"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/users/me/sidebar",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 9575,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "a4ab26215fd53daebdc17f66b480a4bd04e06c7b8541c50f6e6fd4e41f97ca95"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 10436,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "2c3d5768b7b9d556938d3897c21cd682e83c6782e00fc85edd55d06069d222b7"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/users/me/sidebar",
+          "user": "kevin",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 28416,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "2c8d11e855c45f82be8c564b9e3420dec5102d1a40d6c376aa5a916284438daa"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 29396,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3272965939eb5573a5060b6681dece790fdd7eac960f6f9ffed6cff785d00d46"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/users/me/sidebar",
+          "user": "kevin",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 8284,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "6794c932bcbfed688c2dd3d8e17945fd9ced6069327ce3c0c8c334a55dc92a83"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 9074,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "fe146cd67e00d18f60cb5e1a52ac36f1477300c9195b9dd0b619b1f46311f6af"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "search",
+      "source_anchors": [
+        "crates/db/src/tests/message_test.rs:search_reachable_only_finds_messages_in_the_users_rooms",
+        "crates/campfire/src/controllers/searches.rs:the_index_shows_results_recent_searches_and_the_way_back"
+      ],
+      "status": "pass",
+      "evidence": {
+        "queries": [
+          {
+            "user": "david",
+            "query": "coffee",
+            "ids": [
+              933434510,
+              933434520,
+              933434530,
+              933434540,
+              933434550,
+              933434560,
+              933434570,
+              933434580,
+              933434590,
+              933434600,
+              933434610,
+              933434620,
+              933434483
+            ]
+          },
+          {
+            "user": "david",
+            "query": "launch",
+            "ids": [
+              933434516,
+              933434526,
+              933434536,
+              933434546,
+              933434556,
+              933434566,
+              933434576,
+              933434586,
+              933434596,
+              933434606,
+              933434616,
+              933434626,
+              933434483,
+              933434484,
+              933434495,
+              933434501,
+              933434505
+            ]
+          },
+          {
+            "user": "kevin",
+            "query": "coffee",
+            "ids": [
+              933434483
+            ]
+          },
+          {
+            "user": "jason",
+            "query": "approve",
+            "ids": []
+          },
+          {
+            "user": "david",
+            "query": "approve",
+            "ids": [
+              933434636
+            ]
+          }
+        ],
+        "get_history_unchanged": true,
+        "frame_dom_parity": true
+      },
+      "elapsed_seconds": 0.39633,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/searches?q=coffee",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 149532,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "533e5158877310b22307ff20da6f3310780e386cb9540dc843842ea7d03f495c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 149623,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "bb75d2f6405eb8a1a1d0ee7bf5465dfcdffa93719255e2f9aa37034fedc0d4ab"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=launch",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 191017,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "9bc1cb8a79afbd0c0f4b095311c1430d4d49ea967628f426b6c24740bb29ea5c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 191072,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "419c336648e0100a1c4b8389a0a25e22e37083fe87069006003477a2defce4e3"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=coffee",
+          "user": "kevin",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 32525,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e91e28d98f8d31d9e892d4dc994f03556b6405162948d77286292fe405131345"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 32724,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "6832dd22fa11f003778d031aff1ad584d0af5041626ced4618cc62f5c83660b9"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=approve",
+          "user": "jason",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 22919,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "5370be66185080b331b33cf86b0b3de0247edef0ffcc7fdf9812c5b62e283477"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 23127,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "3810aa66ee35c8bf8f6352d58dd938daf9de7c9f76ae4ac8a0546c804a843492"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=approve",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 34272,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "78dee57caec7e8841124695649804abfe32b03c7a252099f35eb4ab0c3391156"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 34471,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "146b0244961d1c3f31d7693be6a940a642f75a7197c7c1a4689fb36b8472bfda"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=coffee",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 125556,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "b95ebcc05fecaa9e9a8db401ecf6185104a934ea1e6d096f7292aec537f507aa"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 125462,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "1847eed4598a8c8852f57d19a119d9c4b7a31b8daaffcf0a1da51d730f7bc583"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "search_history",
+      "source_anchors": [
+        "crates/campfire/src/controllers/searches.rs:searching_records_and_clears_recent_searches"
+      ],
+      "status": "pass",
+      "evidence": {
+        "user": 773523958,
+        "recorded_query": "nativegate6dcf68ca5b53459eaa747fb1be472ddd  query",
+        "post_persistent": true,
+        "delete_persistent": true,
+        "other_user_unchanged": true
+      },
+      "elapsed_seconds": 0.311936,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/searches?q=nativegate6dcf68ca5b53459eaa747fb1be472ddd%2C+query",
+          "user": "loner",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 22994,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c56145088ec48738010b7b9dce4bbb9c08f9afda319c02a43f34fba5de24f464"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 23202,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "a78a87a128b8de84578770ec85eb15385f832745f3d04655107020661f1e6d35"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/searches",
+          "user": "loner",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/searches?q=nativegate6dcf68ca5b53459eaa747fb1be472ddd++query",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/searches?q=nativegate6dcf68ca5b53459eaa747fb1be472ddd++query",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches",
+          "user": "loner",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 23916,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "0eb327b3101dac4f8cabfb8804cc316f551e707fc1df1f2bcc336e8850e94c5c"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 24124,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "a89fb3e1c40aae9559b7c068e94505380c44ae1a39ae94546bb523759b4bfa9b"
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/searches/clear",
+          "user": "loner",
+          "native": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4410/searches",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "oracle": {
+            "status": 302,
+            "content_type": "text/html; charset=utf-8",
+            "location": "http://127.0.0.1:4400/searches",
+            "bytes": 0,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "message_write",
+      "source_anchors": [
+        "crates/campfire/src/controllers/messages/tests.rs:create_appends_the_message_as_a_turbo_stream",
+        "crates/campfire/src/controllers/messages/tests.rs:a_text_message_is_answered_and_broadcast_as_it_was_stored",
+        "crates/db/src/tests/message_test.rs:rich_text_body_is_converted_to_plain_text_for_indexing",
+        "crates/db/src/tests/callbacks_test.rs:creating_a_message_touches_the_room_marks_disconnected_members_unread_and_indexes_after_commit",
+        "crates/db/src/models/message.rs:create",
+        "crates/db/src/models/room.rs:unread_memberships"
+      ],
+      "status": "pass",
+      "evidence": {
+        "message_id": 933434638,
+        "client_message_id": "nativegate6dcf68ca5b53459eaa747fb1be472ddd-safe",
+        "plain_text": "nativegate6dcf68ca5b53459eaa747fb1be472ddd Hello there & goodbye",
+        "unread_membership_ids": [
+          658335620,
+          741303990,
+          897066373,
+          1021579687,
+          1021579688
+        ],
+        "real_turbo_body": true,
+        "room_read_back": true,
+        "search_discoverability": true
+      },
+      "elapsed_seconds": 0.060418,
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/rooms/654632876/messages",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/vnd.turbo-stream.html; charset=utf-8",
+            "location": null,
+            "bytes": 9942,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "74fa86de89e9dd3cb7cd976e16980485d81820aa680d54ebc7b112181823756f"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/vnd.turbo-stream.html; charset=utf-8",
+            "location": null,
+            "bytes": 9933,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "46cd144b1c34dff3e4ef5c92579b5a745ad634bb49e41e93d88a3fb68eeb1074"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/654632876",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 366187,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "a505a064fa2c03eb4e02d4a4d6ded5f5cd0df3682d08a206d8863b8b51a466d8"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 366066,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "e263b4c4f95be313d1d72a6e2eb60b76d2cf07524e2044e3080964e583bb788a"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=nativegate6dcf68ca5b53459eaa747fb1be472ddd",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 34545,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "82fc4b579b4b26d095ae15b781d24cd38dbd54f339a1f9329a4aa51245932361"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 34744,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "f0be84e7c1a87ec7ef506e364e37451cd2d44da8287219a8bba3872e345e1c31"
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "unsafe_richtext",
+      "source_anchors": [
+        "crates/richtext/src/sanitizer.rs:scrubs_like_rails",
+        "crates/richtext/tests/reference_tests.rs:message_presentation_strips_event_handler_attributes_from_allowed_tags",
+        "crates/richtext/tests/hardening.rs:a_url_after_a_greater_than_sign_in_an_attribute_cannot_break_out_of_it",
+        "crates/richtext/src/autolink.rs:auto_link",
+        "crates/richtext/src/filters.rs:sanitize_tags/sanitize_attributes"
+      ],
+      "status": "pass",
+      "evidence": {
+        "message_id": 933434639,
+        "consumers_checked": [
+          "Turbo POST",
+          "room GET",
+          "search GET"
+        ],
+        "unsafe_tags_events_protocols_removed": true,
+        "allowed_text_formatting_link_retained": true,
+        "plain_text": "nativegate6dcf68ca5b53459eaa747fb1be472ddd safe bold\n\nunsafe frameunsafe linkunsafe data linkattribute boundary\n\nsafe link",
+        "unread_membership_ids": [
+          658335620,
+          741303990,
+          897066373,
+          1021579687,
+          1021579688
+        ]
+      },
+      "elapsed_seconds": 1.123452,
+      "requests": [
+        {
+          "method": "POST",
+          "path": "/rooms/654632876/messages",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/vnd.turbo-stream.html; charset=utf-8",
+            "location": null,
+            "bytes": 10139,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "7e0d04e1fc87ad0265c8315191f9d6d01f66f202774d1fcc7a3b13934983280e"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/vnd.turbo-stream.html; charset=utf-8",
+            "location": null,
+            "bytes": 10130,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "4732eaa68eb09f26ba4148a14ac673711caaa3e72ff827e1097f01ef8f8e729f"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/rooms/654632876",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 376224,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "7550e02e36754b0b72e75a3887ede382ebd16ef51f3838513fbd8e170097b474"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 376094,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "a0f19d83175776a41f1a305daf932e48816c56c13aad55073226475d49b577b1"
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/searches?q=nativegate6dcf68ca5b53459eaa747fb1be472ddd",
+          "user": "david",
+          "native": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 44582,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "83051c6e5333a71dce8ac622a5af8c246b0642028e4db85ad0dc4e69c9b264b1"
+          },
+          "oracle": {
+            "status": 200,
+            "content_type": "text/html; charset=utf-8",
+            "location": null,
+            "bytes": 44772,
+            "x_version": "parity",
+            "x_rev": "parity",
+            "sha256": "c89e4dd68ecc39114432a153cdb20ad32984e71da762bbfb6be5a6dbcc9c65cc"
+          }
+        }
+      ]
+    }
+  ]
+}

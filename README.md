@@ -21,6 +21,11 @@ mutations, administration, TLS/ACME, and the remaining application screens. This
 production replacement. Posting exercises real persistence and rendering but **omits broadcast,
 push and webhook delivery work**; its timing is not complete-app POST parity.
 
+The upstream frontend's connectivity monitor requires Cable and eventually disables the room
+composer without it. Browser login, room/sidebar navigation, infinite scroll and search work;
+authenticated browser-origin HTTP POST, persisted reload and search read-back were exercised.
+Normal composer Send-button operation is not yet supported.
+
 The measured build requires Linux. On Debian/Ubuntu, install `pkg-config`, `libsqlite3-dev`,
 `libgumbo-dev`, `libvips-dev` and `ffmpeg`. This host uses libvips 8.15.1 / FFmpeg 6.1.1 rather than
 the reference's 8.16.1 / 7.1.5: generated-media byte parity is not claimed.
@@ -78,6 +83,63 @@ python3 parity/native-contract.py \
 This gate is deliberately a compatibility **subset**, not a claim that the entire Campfire suite
 passes. Its JSON records `whole_campfire_suite_passed: false` and lists uncovered behavior.
 Throughput measurements require this gate, real browser workflows and gzip content checks first.
+
+## Native first measurement — same host
+
+Measured on 2026-10-06 on an **AMD Ryzen 9 9955HX3D**, Linux
+`7.2.6-locietta-WSL2-xanmod1`, with four server hardware threads (`8,10,12,14`),
+four separate load-generator threads (`16,18,20,22`) and **16 clients**. Both binaries ran
+directly on the host. Storage was ext4, not tmpfs. Each configuration/repetition started from
+the same isolated seed; outbound delivery endpoints were changed to fail-fast localhost ports
+for both. Three interleaved repetitions, eight seconds per route after warmup, gzip, no User-Agent.
+
+The Rust executable came from image revision `ccece30e8e160d8c3e05bf395ee55ee35962093b`.
+The native executable was built from `61c393f` in `ReleaseFast`. These measurements are
+**not comparable with the published DHH hardware/table below**.
+
+| HTTP workload | Rust req/s | Zig++ req/s | Zig++ / Rust | Zig++ p99 ms |
+|---|---:|---:|---:|---:|
+| Room page | 14,288.5 | 955.9 | 0.067× | 28.03 |
+| Messages page | 15,426.7 | 1,163.9 | 0.075× | 26.62 |
+| Sidebar | 13,286.6 | 1,504.7 | 0.113× | 20.80 |
+| Search | 17,897.4 | 1,745.8 | 0.098× | 18.08 |
+| Post a message | 3,531.9 | 2,008.5 | 0.569× | 18.88 |
+
+Cells are medians across three repetitions. **This native target is slower than Rust.**
+The POST row remains a partial-application measurement: native broadcast, push and webhook
+delivery are absent. It is not a complete Campfire leaderboard submission.
+
+Verification completed before timing: all ten strict live conformance scenarios, identity/gzip
+DOM equality and real POST persistence, plus Chromium login, navigation, pagination, search and
+browser-origin HTTP POST/reload/search read-back. Native module suites passed on `threadz` and
+`threaded`. Normal composer Send-button operation and the whole Campfire suite are not claimed.
+All **1,722,998 measured responses** were HTTP 200; all 30 measured scenarios had zero transport
+errors. The final native database retained 17,306 benchmark messages (including warmup), all
+17,306 indexed with the expected plain text.
+
+[Raw runs, latency/CPU data and ranges](bench/results/native-zigpp-20261006/report.md),
+[binary fingerprints and verification provenance](bench/results/native-zigpp-20261006/verification.json),
+[live conformance report](bench/results/native-zigpp-20261006/native-contract.json),
+[gzip report](bench/results/native-zigpp-20261006/gzip-contract.json),
+[browser report](bench/results/native-zigpp-20261006/browser-contract.json) and
+[native room screenshot](bench/results/native-zigpp-20261006/native-room.webp).
+
+Reproduce with the existing runner and the pinned Rust image executable:
+
+```sh
+NATIVE_RUST_BIN=/path/to/pinned/rust/campfire \
+NATIVE_ZIGPP_BIN="$PWD/zig-out/bin/campfire-zigpp" \
+RUST_IMAGE=ghcr.io/basecamp/once-campfire-rust@sha256:f92903e60522f1eadfe4d30e009c89cde81652d4919390e6fd72d03661dc7b34 \
+SERVER_CPUS=8,10,12,14 LOADGEN_CPUS=16,18,20,22 PORT=4390 \
+BENCH_WORK_DIR=/path/to/ext4/benchmark-work \
+bench/attrib --configs native-rust,native-zigpp \
+  --routes room_show,messages_page,sidebar,search,post_message \
+  --concs 16 --secs 8 --reps 3 --cable '' --app-env CAMPFIRE_WORKERS=4 \
+  --out bench/results/native-zigpp-rerun
+```
+
+Choose equivalent disjoint CPU sets on a different host. Stop acceptance servers and browser
+activity first; do not compile or run the conformance suite while timing.
 
 ## Rust baseline
 

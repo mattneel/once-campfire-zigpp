@@ -1,0 +1,159 @@
+{
+  "schema": "campfire-native-benchmark-verification/v1",
+  "native_source_commit": "61c393f",
+  "rust_source_commit": "ccece30e8e160d8c3e05bf395ee55ee35962093b",
+  "reference_commit": "90b330024dec3e757c79b6a7e6568f93da8e3148",
+  "rust_image": "ghcr.io/basecamp/once-campfire-rust@sha256:f92903e60522f1eadfe4d30e009c89cde81652d4919390e6fd72d03661dc7b34",
+  "compiler": "0.17.0-dev.2469+zigpp.04926fc36",
+  "zix_commit": "39425614cd3936aed8a149de3de95f69997b49a1",
+  "native_optimize": "ReleaseFast",
+  "sha256": {
+    "native_binary": "d27b7446b2223c6639abe3b5cc7fcab6c96260b6347210e4cd22f4df2b46a398",
+    "rust_binary": "37ffbf60a63a0858b32b9a4444e14793d27fe66aacdbdad72022934235293207",
+    "loadgen_binary": "4f4d155a2002e00452443f6f8921a21eb13488587a80f8c60b26d3d02a0c2cf8"
+  },
+  "host": {
+    "cpu": "AMD Ryzen 9 9955HX3D 16-Core Processor",
+    "logical_threads": 32,
+    "physical_cores": 16,
+    "kernel": "7.2.6-locietta-WSL2-xanmod1",
+    "server_cpus": [
+      8,
+      10,
+      12,
+      14
+    ],
+    "loadgen_cpus": [
+      16,
+      18,
+      20,
+      22
+    ],
+    "distinct_physical_cores_for_each_cpu_set": true,
+    "storage_filesystem": "ext4; /dev/sdf; not tmpfs"
+  },
+  "libraries": {
+    "sqlite": "3.45.1",
+    "gumbo": "0.12.0",
+    "libvips": "8.15.1",
+    "ffmpeg": "6.1.1"
+  },
+  "method": {
+    "runner": "bench/attrib",
+    "configs": [
+      "native-rust",
+      "native-zigpp"
+    ],
+    "concurrency": 16,
+    "seconds_per_route": 8,
+    "repetitions": 3,
+    "order": "Rust then Zig++ per repetition",
+    "seed": "parity/.seed/default; fresh isolated copy per configuration and repetition",
+    "compression": "gzip",
+    "user_agent": null,
+    "outbound_endpoints": "127.0.0.1:9 for both configurations",
+    "worker_environment": {
+      "WEB_CONCURRENCY": 3,
+      "JOB_CONCURRENCY": 3,
+      "RAILS_MAX_THREADS": 5,
+      "CAMPFIRE_WORKERS": 4
+    },
+    "websocket_measurements": false
+  },
+  "verification": {
+    "release_fast_build": "pass",
+    "native_module_suite_threadz": "pass",
+    "native_module_suite_threaded": "pass; latest measured native source",
+    "strict_live_contract": "pass; all 10 source-anchored scenarios",
+    "gzip_content_and_post_persistence": "pass",
+    "chromium_read_search_workflows": "pass",
+    "browser_origin_post_reload_and_search": "pass",
+    "normal_composer_send_button": "unsupported; Cable connectivity gate",
+    "whole_campfire_suite_passed": false,
+    "final_native_benchmark_database": {
+      "room_id": 201306877,
+      "messages_with_client_id": 17306,
+      "indexed_messages": 17306,
+      "matching_bench_plain_text": 17306,
+      "includes_warmup": true,
+      "measured_last_native_post_responses": 15576
+    }
+  },
+  "measurements": {
+    "measuredRuns": 6,
+    "measuredScenarios": 30,
+    "requests": 1722998,
+    "errors": 0,
+    "allResponses200": true,
+    "matchingSettings": true,
+    "routes": [
+      {
+        "route": "room_show",
+        "rustRps": 14288.5,
+        "zigppRps": 955.9,
+        "zigppToRust": 0.06689995450887076,
+        "rustP50Ms": 1.076,
+        "zigppP50Ms": 16.703,
+        "rustP99Ms": 2.095,
+        "zigppP99Ms": 28.031,
+        "rustCpuMsPerRequest": 0.2287,
+        "zigppCpuMsPerRequest": 3.6232
+      },
+      {
+        "route": "messages_page",
+        "rustRps": 15426.7,
+        "zigppRps": 1163.9,
+        "zigppToRust": 0.07544711441850817,
+        "rustP50Ms": 0.997,
+        "zigppP50Ms": 12.207,
+        "rustP99Ms": 1.918,
+        "zigppP99Ms": 26.623,
+        "rustCpuMsPerRequest": 0.2085,
+        "zigppCpuMsPerRequest": 2.912
+      },
+      {
+        "route": "sidebar",
+        "rustRps": 13286.6,
+        "zigppRps": 1504.7,
+        "zigppToRust": 0.11324943928469285,
+        "rustP50Ms": 1.154,
+        "zigppP50Ms": 10.575,
+        "rustP99Ms": 2.295,
+        "zigppP99Ms": 20.799,
+        "rustCpuMsPerRequest": 0.2454,
+        "zigppCpuMsPerRequest": 1.6462
+      },
+      {
+        "route": "search",
+        "rustRps": 17897.4,
+        "zigppRps": 1745.8,
+        "zigppToRust": 0.09754489478918725,
+        "rustP50Ms": 0.831,
+        "zigppP50Ms": 9.343,
+        "rustP99Ms": 1.939,
+        "zigppP99Ms": 18.079,
+        "rustCpuMsPerRequest": 0.1855,
+        "zigppCpuMsPerRequest": 1.6405
+      },
+      {
+        "route": "post_message",
+        "rustRps": 3531.9,
+        "zigppRps": 2008.5,
+        "zigppToRust": 0.568674084770237,
+        "rustP50Ms": 4.227,
+        "zigppP50Ms": 6.807,
+        "rustP99Ms": 14.815,
+        "zigppP99Ms": 18.879,
+        "rustCpuMsPerRequest": 0.7748,
+        "zigppCpuMsPerRequest": 0.6598
+      }
+    ]
+  },
+  "scope_notes": [
+    "Five-path native HTTP target, not a complete Campfire application port.",
+    "POST omits broadcast, push and webhook delivery work; not complete-app POST parity.",
+    "Native binary does not invoke, link or proxy the Rust implementation.",
+    "No comparison with DHH hardware or its published throughput table.",
+    "Generated-media byte parity with reference libvips/FFmpeg versions is not claimed."
+  ]
+}
