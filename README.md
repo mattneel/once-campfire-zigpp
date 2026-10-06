@@ -205,6 +205,43 @@ samples, not instrumented throughput claims.
 [room screenshot](bench/results/native-zigpp-optimized-20261006/native-room.webp) and
 [search screenshot](bench/results/native-zigpp-optimized-20261006/native-search.webp).
 
+## ReleaseFast + system SQLite baseline — settled-host rerun
+
+Rerun on 2026-10-06 after the user paused competing agent activity. **No server code, binary,
+backend or runner-setting changes**: native source `8e9e777`, `ReleaseFast`, system SQLite
+**3.45.1 via the C API**, not Zig++ `std.db`/Turso. Native used four Threadz serving workers;
+both server processes were pinned to the same four distinct physical cores. The load generator
+used four separate cores and 16 clients. Three interleaved repetitions, eight seconds per route,
+gzip, no User-Agent, isolated seeds and ext4 storage, as above.
+
+**The Rust control recovered:** medians are 1.6–3.2% above the first control and 2.67–2.92× the
+earlier drifted batch. Its within-batch min–max spread is 0.33–1.96% of each route's median.
+This supports the contention explanation; it does not causally isolate the other agents.
+
+| HTTP workload | Rust req/s | Zig++ req/s | Zig++ / Rust | Rust p99 ms | Zig++ p99 ms |
+|---|---:|---:|---:|---:|---:|
+| Room page | 14,518.5 | 21,173.6 | 1.46× | 2.039 | 1.528 |
+| Messages page | 15,895.6 | 35,837.0 | 2.25× | 1.815 | 0.938 |
+| Sidebar | 13,546.8 | 19,222.4 | 1.42× | 2.223 | 1.686 |
+| Search | 18,224.2 | 12,587.7 | 0.69× | 1.903 | 2.987 |
+| Post a message | 3,645.7 | 3,059.1 | 0.84× | 13.871 | 12.879 |
+
+Cells are medians; raw ranges are retained. Native messages ranged from 33,225.6 to 38,128.5
+req/s, a 13.7% min–max spread relative to the median. Native leads the three read/render paths
+above; search and POST still trail. POST still omits native broadcast, push/jobs and webhook
+delivery. This is a five-HTTP-path baseline, not full Campfire parity or a DHH hardware comparison.
+
+All **3,774,450 measured responses** were HTTP 200 with zero transport errors across 30
+scenarios. The final native database retained **27,625** benchmark messages including warmup,
+with 27,625 distinct client IDs, persisted ActionText rows and matching FTS plain text.
+All recorded settings match both earlier matrices; executable, load-generator and canonical-seed
+fingerprints match before and after this run. Prior compatibility, module-suite and Chromium
+checks are reused via the matching binary fingerprints, **not claimed as rerun**.
+
+[Settled-host raw runs, latency/CPU ranges](bench/results/native-zigpp-settled-20261006/report.md) and
+[backend, fingerprints, control comparison and persistence evidence](bench/results/native-zigpp-settled-20261006/verification.json).
+The earlier batches above remain preserved as historical measurements.
+
 ## Rust baseline
 
 A Rust implementation of [ONCE Campfire](https://github.com/basecamp/once-campfire). It uses the

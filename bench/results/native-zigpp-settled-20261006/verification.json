@@ -1,0 +1,346 @@
+{
+  "schema": "campfire-native-benchmark-verification/v1",
+  "native_source_commit": "8e9e777",
+  "native_optimize": "ReleaseFast",
+  "database_backend": {
+    "binding": "SQLite C API",
+    "library": "system libsqlite3.so.0",
+    "library_path": "/lib/x86_64-linux-gnu/libsqlite3.so.0",
+    "version": "3.45.1",
+    "uses_std_db_or_turso": false
+  },
+  "rust_source_commit": "ccece30e8e160d8c3e05bf395ee55ee35962093b",
+  "reference_commit": "90b330024dec3e757c79b6a7e6568f93da8e3148",
+  "rust_image": "ghcr.io/basecamp/once-campfire-rust@sha256:f92903e60522f1eadfe4d30e009c89cde81652d4919390e6fd72d03661dc7b34",
+  "compiler_used_for_existing_native_binary": "0.17.0-dev.2469+zigpp.04926fc36",
+  "zix_commit": "39425614cd3936aed8a149de3de95f69997b49a1",
+  "sha256": {
+    "native_binary": "72159985b78a8f3681e77c7ffd249201661d46471bf40a08dd962cc878a4192c",
+    "rust_binary": "37ffbf60a63a0858b32b9a4444e14793d27fe66aacdbdad72022934235293207",
+    "loadgen_binary": "4f4d155a2002e00452443f6f8921a21eb13488587a80f8c60b26d3d02a0c2cf8",
+    "canonical_seed_database": "2159d1e4a5af02d2505b44f39efa1694a3e9619d854a2ce598309d0327fd2e10"
+  },
+  "fingerprints_checked_before_and_after_matrix": true,
+  "host": {
+    "cpu": "AMD Ryzen 9 9955HX3D 16-Core Processor",
+    "logical_threads": 32,
+    "physical_cores": 16,
+    "kernel": "7.2.6-locietta-WSL2-xanmod1",
+    "server_cpus": [
+      8,
+      10,
+      12,
+      14
+    ],
+    "loadgen_cpus": [
+      16,
+      18,
+      20,
+      22
+    ],
+    "distinct_physical_cores_for_each_cpu_set": true,
+    "storage_filesystem": "ext4; /dev/sdf; not tmpfs"
+  },
+  "method": {
+    "runner": "bench/attrib",
+    "configs": [
+      "native-rust",
+      "native-zigpp"
+    ],
+    "concurrency": 16,
+    "seconds_per_route": 8,
+    "repetitions": 3,
+    "order": "Rust then Zig++ per repetition",
+    "seed": "parity/.seed/default; fresh isolated copy per configuration and repetition",
+    "compression": "gzip",
+    "user_agent": null,
+    "outbound_endpoints": "127.0.0.1:9 for both configurations",
+    "worker_environment": {
+      "WEB_CONCURRENCY": 3,
+      "JOB_CONCURRENCY": 3,
+      "RAILS_MAX_THREADS": 5,
+      "CAMPFIRE_WORKERS": 4
+    },
+    "websocket_measurements": false
+  },
+  "verification": {
+    "native_demo_and_prior_benchmark_processes_absent_at_preflight": true,
+    "server_binaries_unchanged": true,
+    "native_optimize_provenance": "Existing ReleaseFast build; SHA-256 matches the previously verified binary. No server rebuild in this rerun.",
+    "previous_build_module_live_wire_and_browser_checks": {
+      "reused_not_rerun": true,
+      "reason": "Both server executable fingerprints match the prior verified matrix.",
+      "provenance": "../native-zigpp-optimized-20261006/verification.json",
+      "live_contract": "../native-zigpp-optimized-20261006/native-contract.json",
+      "gzip_and_cache_contract": "../native-zigpp-optimized-20261006/gzip-contract.json",
+      "browser_contract": "../native-zigpp-optimized-20261006/browser-contract.json"
+    },
+    "final_native_benchmark_database": {
+      "room_id": 201306877,
+      "canonical_max_message_id": 933434637,
+      "messages_with_client_id": 27625,
+      "distinct_client_ids": 27625,
+      "action_text_rows": 27625,
+      "indexed_messages": 27625,
+      "matching_bench_plain_text": 27625,
+      "unexpected_writes_outside_benchmark_room": 0,
+      "includes_warmup": true,
+      "measured_last_native_post_responses": 24735,
+      "read_only_database_query_after_server_exit": true
+    },
+    "whole_campfire_suite_passed": false
+  },
+  "measurements": {
+    "runs": 6,
+    "scenarios": 30,
+    "requests": 3774450,
+    "all_responses_200": true,
+    "transport_errors": 0,
+    "all_scenarios_gzip_and_16_clients": true,
+    "requested_seconds_per_scenario": 8,
+    "observed_seconds_min": 8.0,
+    "observed_seconds_max": 8.01,
+    "duration_note": "Observed duration includes draining requests already in flight at the eight-second deadline.",
+    "recorded_settings_match_both_earlier_batches": true,
+    "get_response_sizes_match_previous_batch": true
+  },
+  "routes": [
+    {
+      "route": "room_show",
+      "rust": {
+        "rps": 14518.5,
+        "rps_min": 14493.2,
+        "rps_max": 14541.0,
+        "rps_range_pct_of_median": 0.32923511382029325,
+        "p50_ms": 1.06,
+        "p99_ms": 2.039,
+        "cpu_ms_per_req": 0.2243,
+        "loadgen_cpu_ms_per_req": 0.0595,
+        "requests": 348468,
+        "response_bytes": [
+          24231,
+          24231,
+          24231
+        ]
+      },
+      "native": {
+        "rps": 21173.6,
+        "rps_min": 20883.7,
+        "rps_max": 21176.7,
+        "rps_range_pct_of_median": 1.3837986927116788,
+        "p50_ms": 0.734,
+        "p99_ms": 1.528,
+        "cpu_ms_per_req": 0.1589,
+        "loadgen_cpu_ms_per_req": 0.039,
+        "requests": 505927,
+        "response_bytes": [
+          24105,
+          24105,
+          24105
+        ]
+      },
+      "native_to_rust": 1.458387574473947,
+      "rust_to_previous_control": 2.7206033917361565,
+      "rust_to_original_control": 1.016096861112083,
+      "rust_response_size_matches_previous": true,
+      "native_response_size_matches_previous": true
+    },
+    {
+      "route": "messages_page",
+      "rust": {
+        "rps": 15895.6,
+        "rps_min": 15879.7,
+        "rps_max": 16029.3,
+        "rps_range_pct_of_median": 0.941140944663923,
+        "p50_ms": 0.973,
+        "p99_ms": 1.815,
+        "cpu_ms_per_req": 0.2023,
+        "loadgen_cpu_ms_per_req": 0.0565,
+        "requests": 382476,
+        "response_bytes": [
+          16158,
+          16158,
+          16158
+        ]
+      },
+      "native": {
+        "rps": 35837.0,
+        "rps_min": 33225.6,
+        "rps_max": 38128.5,
+        "rps_range_pct_of_median": 13.681111700198123,
+        "p50_ms": 0.4,
+        "p99_ms": 0.938,
+        "cpu_ms_per_req": 0.0965,
+        "loadgen_cpu_ms_per_req": 0.0351,
+        "requests": 857600,
+        "response_bytes": [
+          16086,
+          16086,
+          16086
+        ]
+      },
+      "native_to_rust": 2.2545232642995545,
+      "rust_to_previous_control": 2.801776712377058,
+      "rust_to_original_control": 1.0303953535104722,
+      "rust_response_size_matches_previous": true,
+      "native_response_size_matches_previous": true
+    },
+    {
+      "route": "sidebar",
+      "rust": {
+        "rps": 13546.8,
+        "rps_min": 13480.9,
+        "rps_max": 13556.4,
+        "rps_range_pct_of_median": 0.5573271916614995,
+        "p50_ms": 1.136,
+        "p99_ms": 2.223,
+        "cpu_ms_per_req": 0.2404,
+        "loadgen_cpu_ms_per_req": 0.058,
+        "requests": 324713,
+        "response_bytes": [
+          5910,
+          5910,
+          5910
+        ]
+      },
+      "native": {
+        "rps": 19222.4,
+        "rps_min": 18728.3,
+        "rps_max": 19499.7,
+        "rps_range_pct_of_median": 4.013026469119367,
+        "p50_ms": 0.771,
+        "p99_ms": 1.686,
+        "cpu_ms_per_req": 0.1706,
+        "loadgen_cpu_ms_per_req": 0.0346,
+        "requests": 459654,
+        "response_bytes": [
+          5872,
+          5872,
+          5872
+        ]
+      },
+      "native_to_rust": 1.4189624117872857,
+      "rust_to_previous_control": 2.768325329518749,
+      "rust_to_original_control": 1.019583640660515,
+      "rust_response_size_matches_previous": true,
+      "native_response_size_matches_previous": true
+    },
+    {
+      "route": "search",
+      "rust": {
+        "rps": 18224.2,
+        "rps_min": 18009.2,
+        "rps_max": 18255.2,
+        "rps_range_pct_of_median": 1.3498534915112872,
+        "p50_ms": 0.819,
+        "p99_ms": 1.903,
+        "cpu_ms_per_req": 0.1829,
+        "loadgen_cpu_ms_per_req": 0.0524,
+        "requests": 435967,
+        "response_bytes": [
+          9766,
+          9766,
+          9766
+        ]
+      },
+      "native": {
+        "rps": 12587.7,
+        "rps_min": 11999.5,
+        "rps_max": 12677.1,
+        "rps_range_pct_of_median": 5.383032642976877,
+        "p50_ms": 1.219,
+        "p99_ms": 2.987,
+        "cpu_ms_per_req": 0.1924,
+        "loadgen_cpu_ms_per_req": 0.0397,
+        "requests": 298173,
+        "response_bytes": [
+          9596,
+          9596,
+          9596
+        ]
+      },
+      "native_to_rust": 0.6907134469551476,
+      "rust_to_previous_control": 2.9187206713752625,
+      "rust_to_original_control": 1.0182596354777789,
+      "rust_response_size_matches_previous": true,
+      "native_response_size_matches_previous": true
+    },
+    {
+      "route": "post_message",
+      "rust": {
+        "rps": 3645.7,
+        "rps_min": 3631.4,
+        "rps_max": 3702.7,
+        "rps_range_pct_of_median": 1.9557286666483729,
+        "p50_ms": 4.111,
+        "p99_ms": 13.871,
+        "cpu_ms_per_req": 0.7451,
+        "loadgen_cpu_ms_per_req": 0.0803,
+        "requests": 87887,
+        "response_bytes": [
+          1991,
+          1992,
+          1991
+        ]
+      },
+      "native": {
+        "rps": 3059.1,
+        "rps_min": 3040.4,
+        "rps_max": 3090.4,
+        "rps_range_pct_of_median": 1.6344676538851295,
+        "p50_ms": 3.871,
+        "p99_ms": 12.879,
+        "cpu_ms_per_req": 0.3905,
+        "loadgen_cpu_ms_per_req": 0.0455,
+        "requests": 73585,
+        "response_bytes": [
+          2024,
+          2024,
+          2025
+        ]
+      },
+      "native_to_rust": 0.8390981155882272,
+      "rust_to_previous_control": 2.6716253847281255,
+      "rust_to_original_control": 1.0322206177977857,
+      "rust_response_size_matches_previous": false,
+      "native_response_size_matches_previous": true
+    }
+  ],
+  "control_interpretation": {
+    "user_context": "User reported four other agents were active during the earlier unstable measurements, then gave the go-ahead after calming the system.",
+    "rust_control_change_vs_original_pct": [
+      1.6096861112083083,
+      3.039535351047218,
+      1.958364066051499,
+      1.8259635477778868,
+      3.2220617797785733
+    ],
+    "rust_control_change_vs_previous_factor": [
+      2.7206033917361565,
+      2.801776712377058,
+      2.768325329518749,
+      2.9187206713752625,
+      2.6716253847281255
+    ],
+    "rust_between_rep_rps_range_pct_of_median": [
+      0.32923511382029325,
+      0.941140944663923,
+      0.5573271916614995,
+      1.3498534915112872,
+      1.9557286666483729
+    ],
+    "conclusion": "Rust recovered to 1.6\u20133.2% above the first control and has 0.33\u20131.96% min\u2013max spread relative to the median within this batch. This supports the contention explanation; it is not causal isolation of the other agents.",
+    "remaining_native_variance": "Native messages throughput ranges from 33,225.6 to 38,128.5 req/s, a 13.7% min\u2013max spread relative to its median. Retain the ranges rather than presenting every route as equally stable."
+  },
+  "scope": {
+    "five_http_workloads_only": true,
+    "native_post_omits": [
+      "Cable broadcast",
+      "Web Push/jobs",
+      "webhook delivery"
+    ],
+    "normal_composer_send_button": "Unsupported without Cable connectivity.",
+    "published_dhh_hardware_comparison": false,
+    "whole_application_parity": false
+  }
+}
