@@ -124,6 +124,9 @@ pub const Pipeline = struct {
                 try out.appendSlice(self.allocator, digested[found]);
             }
             try out.appendSlice(self.allocator, comment_end);
+            // The trailing \s*? stops before the last LF: Ruby's \Z (ported as
+            // (?=\n?\z) in Rust) also matches there. gsub retains that unmatched LF.
+            if (std.mem.endsWith(u8, body, "\n")) try out.append(self.allocator, '\n');
             return allocator.dupe(u8, out.items);
         }
         return allocator.dupe(u8, body);
@@ -262,17 +265,6 @@ fn plus(allocator: Allocator, left: []const u8, right: []const u8) ![]const u8 {
     return if (prefix.items.len == 0) allocator.dupe(u8, ".") else std.mem.join(allocator, "/", prefix.items);
 }
 
-test "Propshaft URL matching, exclusions and fingerprints" {
-    const body = "url(data:x) url(#x) url(%23x) url(https://host/x) url( '../img.png?v=1#x' ) url(missing.png?)";
-    var cursor: usize = 0;
-    const url = nextUrl(body, .css, &cursor).?;
-    try std.testing.expectEqualStrings("../img.png", url.path);
-    try std.testing.expectEqualStrings("?v=1#x", url.tail);
-    try std.testing.expect(nextUrl(body, .css, &cursor) == null);
-    cursor = 0;
-    try std.testing.expectEqualStrings("icon.svg", nextUrl("RAILS_ASSET_URL(\"icon.svg\")", .js, &cursor).?.path);
-}
-
 test "Pathname resolution and digestable extensions" {
     const a = std.testing.allocator;
     const cases = [_][3][]const u8{
@@ -322,7 +314,69 @@ test "dependency digest discovery, cycles and compiler output" {
     try std.testing.expectEqualStrings(expected_css, css);
     const js = try pipeline.compile(a, 3, &digested);
     defer a.free(js);
-    const expected_js = try std.fmt.allocPrint(a, "\"/assets/{s}\"\n//# sourceMappingURL=/assets/{s}", .{ digested[2], digested[4] });
+    const expected_js = try std.fmt.allocPrint(a, "\"/assets/{s}\"\n//# sourceMappingURL=/assets/{s}\n", .{ digested[2], digested[4] });
     defer a.free(expected_js);
     try std.testing.expectEqualStrings(expected_js, js);
+}
+
+test "CSS compilation preserves excluded URLs and source regex boundaries" {
+    const a = std.testing.allocator;
+    const sources = [_]Source{
+        .{ .logical = "app.css", .body = "" },
+        .{ .logical = "img/icon.svg", .body = "<svg/>" },
+    };
+    var pipeline: Pipeline = .{ .allocator = a, .sources = &sources, .by_logical = .empty, .version = "1.0" };
+    defer pipeline.by_logical.deinit(a);
+    for (sources, 0..) |source, i| try pipeline.by_logical.put(a, source.logical, i);
+    const digested = [_][]const u8{ "app-digest.css", "img/icon-digest.svg" };
+    const cases = [_][2][]const u8{
+        .{ "url(data:x) url(#x) url(%23x) url(http://host/x) url(https://host/x) url(//host/x)", "url(data:x) url(#x) url(%23x) url(http://host/x) url(https://host/x) url(//host/x)" },
+        .{ "url( 'img/icon.svg?v=1#x')", "url(\"/assets/img/icon-digest.svg?v=1#x\")" },
+        .{ "url( 'img/icon.svg?v=1#x' )", "url( 'img/icon.svg?v=1#x' )" },
+        .{ "url(img/icon.svg \t)", "url(\"/assets/img/icon-digest.svg\")" },
+        .{ "url('img/icon.svg \t')", "url(\"/assets/img/icon-digest.svg\")" },
+        .{ "url(img/icon.svg?v=1 \t)", "url(\"/assets/img/icon-digest.svg?v=1 \t\")" },
+        .{ "url(img/icon.svg?) url(img/icon.svg#) url()", "url(img/icon.svg?) url(img/icon.svg#) url()" },
+        .{ "url(missing.png?lost#x)", "url(\"missing.png\")" },
+        .{ "URL(img/icon.svg) myurl(img/icon.svg)", "URL(img/icon.svg) myurl(\"/assets/img/icon-digest.svg\")" },
+        .{ "url('img/icon.svg\") url(\"img/icon.svg)", "url(\"/assets/img/icon-digest.svg\") url(\"/assets/img/icon-digest.svg\")" },
+    };
+    // These are compiler-visible bytes, including the regex's permissive quotes
+    // and lack of a word boundary, rather than assumptions about valid CSS syntax.
+    for (cases) |case| {
+        const input = [_]Source{ .{ .logical = sources[0].logical, .body = case[0] }, sources[1] };
+        pipeline.sources = &input;
+        const compiled = try pipeline.compile(a, 0, &digested);
+        defer a.free(compiled);
+        try std.testing.expectEqualStrings(case[1], compiled);
+    }
+}
+
+test "source map compilation retains Ruby end-anchor newline and comment delimiters" {
+    const a = std.testing.allocator;
+    const sources = [_]Source{
+        .{ .logical = "app.js", .body = "" },
+        .{ .logical = "app.js.map", .body = "{}" },
+    };
+    var pipeline: Pipeline = .{ .allocator = a, .sources = &sources, .by_logical = .empty, .version = "1.0" };
+    defer pipeline.by_logical.deinit(a);
+    for (sources, 0..) |source, i| try pipeline.by_logical.put(a, source.logical, i);
+    const digested = [_][]const u8{ "app-digest.js", "app-digest.js.map" };
+    const cases = [_][2][]const u8{
+        .{ "code\n//# sourceMappingURL=app.js.map", "code\n//# sourceMappingURL=/assets/app-digest.js.map" },
+        .{ "code\n//# sourceMappingURL=app.js.map\n", "code\n//# sourceMappingURL=/assets/app-digest.js.map\n" },
+        .{ "code\n//# sourceMappingURL=app.js.map \r\n\n", "code\n//# sourceMappingURL=/assets/app-digest.js.map\n" },
+        .{ "code\n//# sourceMappingURL=app.js.map \t", "code\n//# sourceMappingURL=/assets/app-digest.js.map" },
+        .{ "code\n/*# sourceMappingURL=app.js.map */\n", "code\n/*# sourceMappingURL=/assets/app-digest.js.map */\n" },
+        .{ "code\n//# sourceMappingURL=missing.js.map\n", "code\n//\n" },
+        .{ "code\n/*# sourceMappingURL=missing.js.map */\n", "code\n/* */\n" },
+        .{ "code\n//# sourceMappingURL=app.js.map\nmore", "code\n//# sourceMappingURL=app.js.map\nmore" },
+    };
+    for (cases) |case| {
+        const input = [_]Source{ .{ .logical = sources[0].logical, .body = case[0] }, sources[1] };
+        pipeline.sources = &input;
+        const compiled = try pipeline.compile(a, 0, &digested);
+        defer a.free(compiled);
+        try std.testing.expectEqualStrings(case[1], compiled);
+    }
 }
