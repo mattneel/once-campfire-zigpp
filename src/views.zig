@@ -1157,3 +1157,53 @@ fn cableUrl(w: *Io.Writer,base: []const u8) !void {
     else return error.InvalidBaseUrl;
     try w.writeAll("/cable");
 }
+
+/// reference/app/views/welcome/show.html.erb: a real user with no joined rooms.
+pub fn welcome(ctx: *Context) ![]const u8 {
+    var out = Io.Writer.Allocating.init(ctx.allocator);
+    defer out.deinit();
+    const w = &out.writer;
+    if (ctx.frame_id != null) {
+        try frameHead(w, "");
+    } else {
+        const account = try ctx.db.account(ctx.allocator, ctx.io);
+        try layoutHead(ctx, w, account, "No rooms yet", "sidebar", "");
+        try w.writeAll("</nav><main id=\"main-content\">");
+    }
+    try w.writeAll("<div id=\"message-area\" class=\"message-area\"><div class=\"message-area--empty min-width center\"><figure class=\"center pad\">");
+    try image(ctx, w, "messages-empty.svg", " aria-hidden=\"true\" class=\"colorize--black translucent\"");
+    try w.writeAll("<span class=\"for-screen-reader\">");
+    try compat.htmlEscape(w, ctx.user.name);
+    try w.writeAll("</span></figure></div></div>");
+    if (ctx.frame_id != null) {
+        try w.writeAll("</body></html>");
+    } else {
+        try w.writeAll("<footer id=\"footer\"></footer></main><aside id=\"sidebar\" data-controller=\"toggle-class\" data-toggle-class-toggle-class=\"open\">");
+        try sidebarFrame(w, "/users/me/sidebar");
+        try w.writeAll("</turbo-frame></aside>");
+        try layoutFoot(ctx, w);
+    }
+    return out.toOwnedSlice();
+}
+
+/// MessagesController#create's HTML response when the room has been deleted.
+pub fn roomNotFound(ctx: *Context) ![]const u8 {
+    var out = Io.Writer.Allocating.init(ctx.allocator);
+    defer out.deinit();
+    const w = &out.writer;
+    if (ctx.frame_id != null) {
+        try frameHead(w, "");
+    } else {
+        const account = try ctx.db.account(ctx.allocator, ctx.io);
+        try layoutHead(ctx, w, account, "Campfire", "", "");
+        try w.writeAll("</nav><main id=\"main-content\">");
+    }
+    try w.writeAll("<turbo-frame id=\"composer-frame\"><span class=\"composer__input input input--actor shake margin-block-end txt-negative txt-align-center\" style=\"--input-border-color: var(--color-negative)\"><span>This room was deleted.</span></span></turbo-frame>");
+    if (ctx.frame_id != null) {
+        try w.writeAll("</body></html>");
+    } else {
+        try w.writeAll("<footer id=\"footer\"></footer></main><aside id=\"sidebar\" data-controller=\"toggle-class\" data-toggle-class-toggle-class=\"open\"></aside>");
+        try layoutFoot(ctx, w);
+    }
+    return out.toOwnedSlice();
+}
