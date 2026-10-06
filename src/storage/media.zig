@@ -1,16 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Variation = @import("variation.zig").Variation;
-pub const c = @cImport({
-    @cInclude("fcntl.h");
-    @cInclude("unistd.h");
-    @cInclude("sys/stat.h");
-    @cInclude("spawn.h");
-    @cInclude("sys/wait.h");
-    @cInclude("signal.h");
-    @cInclude("time.h");
-    @cInclude("errno.h");
-});
+pub const c = @import("c");
 const Image = opaque {};
 extern fn vips_init([*:0]const u8) c_int;
 extern fn vips_version_string() [*:0]const u8;
@@ -40,9 +31,11 @@ pub fn init() !void {
     vips_block_untrusted_set(1);
     vips_operation_block_set("VipsForeignLoadOpenslide", 1);
 }
-pub fn version() []const u8 { return std.mem.span(vips_version_string()); }
+pub fn version() []const u8 {
+    return std.mem.span(vips_version_string());
+}
 pub fn openRoot(allocator: Allocator, path: []const u8) !c_int {
-    const z = try allocator.dupeZ(u8, path);
+    const z = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(z);
     const fd = c.open(z.ptr, c.O_RDONLY | c.O_DIRECTORY | c.O_CLOEXEC);
     if (fd < 0) return error.StorageRootUnavailable;
@@ -53,26 +46,30 @@ pub fn validKey(key: []const u8) bool {
     for (key) |b| if (!std.ascii.isAlphanumeric(b) and b != '-' and b != '_') return false;
     return true;
 }
-fn folder(root: c_int, key: []const u8, create: bool) !c_int {
+fn folder(root: c_int, key: []const u8, create_dirs: bool) !c_int {
     if (!validKey(key)) return error.UnsafeStorageKey;
     const a: [3:0]u8 = .{ key[0], key[1], 0 };
     const b: [3:0]u8 = .{ key[2], key[3], 0 };
-    if (create and c.mkdirat(root, &a, 0o700) != 0 and c.__errno_location().* != c.EEXIST) return error.StorageWrite;
+    if (create_dirs and c.mkdirat(root, &a, 0o700) != 0 and c.__errno_location().* != c.EEXIST) return error.StorageWrite;
     const first = c.openat(root, &a, c.O_RDONLY | c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC);
     if (first < 0) return fileError();
     defer _ = c.close(first);
-    if (create and c.mkdirat(first, &b, 0o700) != 0 and c.__errno_location().* != c.EEXIST) return error.StorageWrite;
+    if (create_dirs and c.mkdirat(first, &b, 0o700) != 0 and c.__errno_location().* != c.EEXIST) return error.StorageWrite;
     const second = c.openat(first, &b, c.O_RDONLY | c.O_DIRECTORY | c.O_NOFOLLOW | c.O_CLOEXEC);
     if (second < 0) return fileError();
     return second;
 }
 fn fileError() anyerror {
-    return switch (c.__errno_location().*) { c.ENOENT => error.FileNotFound, c.ELOOP, c.ENOTDIR => error.UnsafeStorageKey, else => error.StorageRead };
+    return switch (c.__errno_location().*) {
+        c.ENOENT => error.FileNotFound,
+        c.ELOOP, c.ENOTDIR => error.UnsafeStorageKey,
+        else => error.StorageRead,
+    };
 }
 pub fn openKey(allocator: Allocator, root: c_int, key: []const u8) !c_int {
     const dir = try folder(root, key, false);
     defer _ = c.close(dir);
-    const z = try allocator.dupeZ(u8, key);
+    const z = try allocator.dupeSentinel(u8, key, 0);
     defer allocator.free(z);
     const fd = c.openat(dir, z.ptr, c.O_RDONLY | c.O_NOFOLLOW | c.O_CLOEXEC);
     if (fd < 0) return fileError();
@@ -96,7 +93,10 @@ fn readFd(allocator: Allocator, fd: c_int) ![]const u8 {
     var pos: usize = 0;
     while (pos < data.len) {
         const n = c.pread(fd, data.ptr + pos, data.len - pos, @intCast(pos));
-        if (n < 0) { if (c.__errno_location().* == c.EINTR) continue; return error.StorageRead; }
+        if (n < 0) {
+            if (c.__errno_location().* == c.EINTR) continue;
+            return error.StorageRead;
+        }
         if (n == 0) return error.StorageRead;
         pos += @intCast(n);
     }
@@ -109,7 +109,10 @@ pub fn write(allocator: Allocator, root: c_int, key: []const u8, bytes: []const 
     var pos: usize = 0;
     while (pos < bytes.len) {
         const n = c.write(fd, bytes.ptr + pos, bytes.len - pos);
-        if (n < 0) { if (c.__errno_location().* == c.EINTR) continue; return error.StorageWrite; }
+        if (n < 0) {
+            if (c.__errno_location().* == c.EINTR) continue;
+            return error.StorageWrite;
+        }
         if (n == 0) return error.StorageWrite;
         pos += @intCast(n);
     }
@@ -118,7 +121,7 @@ pub fn write(allocator: Allocator, root: c_int, key: []const u8, bytes: []const 
 fn create(allocator: Allocator, root: c_int, key: []const u8) !c_int {
     const dir = try folder(root, key, true);
     defer _ = c.close(dir);
-    const z = try allocator.dupeZ(u8, key);
+    const z = try allocator.dupeSentinel(u8, key, 0);
     defer allocator.free(z);
     const fd = c.openat(dir, z.ptr, c.O_WRONLY | c.O_CREAT | c.O_EXCL | c.O_NOFOLLOW | c.O_CLOEXEC, @as(c_uint, 0o600));
     if (fd < 0) return error.StorageWrite;
@@ -127,7 +130,7 @@ fn create(allocator: Allocator, root: c_int, key: []const u8) !c_int {
 pub fn remove(allocator: Allocator, root: c_int, key: []const u8) void {
     const dir = folder(root, key, false) catch return;
     defer _ = c.close(dir);
-    const z = allocator.dupeZ(u8, key) catch return;
+    const z = allocator.dupeSentinel(u8, key, 0) catch return;
     defer allocator.free(z);
     _ = c.unlinkat(dir, z.ptr, 0);
 }
@@ -233,7 +236,11 @@ pub fn preview(allocator: Allocator, root: c_int, source_key: []const u8, temp_k
     var pid: c.pid_t = undefined;
     if (c.posix_spawnp(&pid, "ffmpeg", &actions, null, @ptrCast(@constCast(&args)), @ptrCast(environ)) != 0) return error.PreviewSpawn;
     var reaped = false;
-    defer if (!reaped) { _ = c.kill(pid, c.SIGKILL); var status: c_int = 0; while (c.waitpid(pid, &status, 0) < 0 and c.__errno_location().* == c.EINTR) {} };
+    defer if (!reaped) {
+        _ = c.kill(pid, c.SIGKILL);
+        var status: c_int = 0;
+        while (c.waitpid(pid, &status, 0) < 0 and c.__errno_location().* == c.EINTR) {}
+    };
     var started: c.struct_timespec = undefined;
     if (c.clock_gettime(c.CLOCK_MONOTONIC, &started) != 0) return error.PreviewSpawn;
     while (true) {

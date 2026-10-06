@@ -1,0 +1,13 @@
+.{
+    .name = .campfire_zigpp,
+    .fingerprint = 0x9b49763699e9abc1,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.17.0-dev.2469",
+    .dependencies = .{
+        .zix = .{
+            .url = "https://github.com/mattneel/zix/archive/39425614cd3936aed8a149de3de95f69997b49a1.tar.gz",
+            .hash = "zix-0.5.0-C6KT3DtOkACbHbVYzs3IgU79BuRp0xZw9yZKNQ7jp5oq",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "vectors", "MIT-LICENSE" },
+}

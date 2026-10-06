@@ -28,6 +28,8 @@ pub const Account = struct {
     join_code: []const u8,
     custom_styles: ?[]const u8 = null,
     settings: ?[]const u8 = null,
+    logo: ?Blob = null,
+    help_contact: ?User = null,
     created_at: []const u8,
     updated_at: []const u8,
 };
@@ -120,6 +122,7 @@ pub const SidebarRoom = struct {
     room: Room,
     involvement: []const u8,
     unread_at: ?[]const u8,
+    membership_updated_at: []const u8 = "",
     users: []const User = &.{},
 };
 
@@ -128,6 +131,7 @@ pub const Sidebar = struct {
     user: User,
     shared: []const SidebarRoom,
     directs: []const SidebarRoom,
+    direct_placeholder_users: []const User = &.{},
 };
 
 pub const SearchPage = struct {

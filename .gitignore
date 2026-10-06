@@ -5,3 +5,6 @@ target/
 /parity/.native
 /.claude
 /.cargo-home
+/.zig-cache/
+/zig-pkg/
+/zig-out/

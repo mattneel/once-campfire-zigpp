@@ -6,7 +6,7 @@ const wire = @import("wire.zig");
 const db = @import("../db.zig");
 const compat = @import("../compat.zig");
 const model = @import("../model.zig");
-const c = @cImport({ @cInclude("sqlite3.h"); });
+const c = @import("c");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 fn exec(database: *db.Database, sql: [:0]const u8) !void {
@@ -20,8 +20,6 @@ fn proxyPath(a: Allocator, secrets: *compat.Secrets, id: i64) ![]const u8 {
     return std.fmt.allocPrint(a, "/rails/active_storage/blobs/proxy/{s}/source.jpg", .{try wire.segment(a, try secrets.blobSignedId(a, id))});
 }
 
-/// Actual C-backed disk operations, signatures and SQLite variant rows. No
-/// mocks, original substitution, golden-file response fixture, or external port.
 test "native storage serves media and persists actual named variants across reopening" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -40,7 +38,7 @@ test "native storage serves media and persists actual named variants across reop
     const source = try Io.Dir.cwd().readFileAlloc(io, "vectors/storage/moon-thumb.jpg", a, .unlimited);
     const key = "abcdsource000000000000000000";
     try io.blocking(media.write, .{ a, store.root, key, source });
-    const sql = try std.fmt.allocPrintSentinel(a, "INSERT INTO active_storage_blobs(id,key,filename,content_type,metadata,service_name,byte_size,checksum,created_at) VALUES(100,'{s}','source.jpg','image/jpeg','{{}}','local',{d},NULL,'2026-01-01 00:00:00.000000')", .{key, source.len}, 0);
+    const sql = try std.fmt.allocPrintSentinel(a, "INSERT INTO active_storage_blobs(id,key,filename,content_type,metadata,service_name,byte_size,checksum,created_at) VALUES(100,'{s}','source.jpg','image/jpeg','{{}}','local',{d},NULL,'2026-01-01 00:00:00.000000')", .{ key, source.len }, 0);
     try io.blocking(exec, .{ &database, sql });
     const blob = (try database.blob(a, io, 100)).?;
     const user: model.User = .{ .id = 1, .name = "Native", .created_at = blob.created_at, .updated_at = blob.created_at, .avatar = blob };
@@ -156,11 +154,12 @@ test "native disk rejects signed traversal invalid purpose and expired tokens" {
 
 extern var environ: [*:null]?[*:0]u8;
 fn makeVideo(allocator: Allocator, path: []const u8) !void {
-    const target = try allocator.dupeZ(u8, path);
+    const target = try allocator.dupeSentinel(u8, path, 0);
     defer allocator.free(target);
     const argv = [_:null]?[*:0]const u8{
-        "ffmpeg", "-f", "lavfi", "-i", "color=c=blue:s=64x48:r=10",
-        "-t", "0.4", "-c:v", "mpeg4", "-threads", "1", "-y", target.ptr,
+        "ffmpeg", "-f",  "lavfi",    "-i",    "color=c=blue:s=64x48:r=10",
+        "-t",     "0.4", "-c:v",     "mpeg4", "-threads",
+        "1",      "-y",  target.ptr,
     };
     var actions: media.c.posix_spawn_file_actions_t = undefined;
     if (media.c.posix_spawn_file_actions_init(&actions) != 0) return error.TestVideoGeneration;

@@ -208,16 +208,16 @@ fn assetsVersion(allocator: Allocator, io: Io, reference: Io.Dir) ![]const u8 {
 fn mimeType(path: []const u8) []const u8 {
     const ext = propshaft.extname(path);
     const entries = .{
-        .{ ".avif", "image/avif" }, .{ ".css", "text/css" }, .{ ".csv", "text/csv" },
-        .{ ".gif", "image/gif" }, .{ ".gz", "application/x-gzip" }, .{ ".htm", "text/html" },
-        .{ ".html", "text/html" }, .{ ".ico", "image/vnd.microsoft.icon" }, .{ ".jpeg", "image/jpeg" },
-        .{ ".jpg", "image/jpeg" }, .{ ".js", "text/javascript" }, .{ ".mjs", "text/javascript" },
-        .{ ".json", "application/json" }, .{ ".m4a", "audio/mp4a-latm" }, .{ ".mp3", "audio/mpeg" },
-        .{ ".mp4", "video/mp4" }, .{ ".ogg", "application/ogg" }, .{ ".otf", "font/otf" },
-        .{ ".pdf", "application/pdf" }, .{ ".png", "image/png" }, .{ ".svg", "image/svg+xml" },
-        .{ ".ttf", "font/ttf" }, .{ ".txt", "text/plain" }, .{ ".wav", "audio/x-wav" },
-        .{ ".webm", "video/webm" }, .{ ".webp", "image/webp" }, .{ ".woff", "font/woff" },
-        .{ ".woff2", "font/woff2" }, .{ ".xml", "application/xml" }, .{ ".zip", "application/zip" },
+        .{ ".avif", "image/avif" },       .{ ".css", "text/css" },                 .{ ".csv", "text/csv" },
+        .{ ".gif", "image/gif" },         .{ ".gz", "application/x-gzip" },        .{ ".htm", "text/html" },
+        .{ ".html", "text/html" },        .{ ".ico", "image/vnd.microsoft.icon" }, .{ ".jpeg", "image/jpeg" },
+        .{ ".jpg", "image/jpeg" },        .{ ".js", "text/javascript" },           .{ ".mjs", "text/javascript" },
+        .{ ".json", "application/json" }, .{ ".m4a", "audio/mp4a-latm" },          .{ ".mp3", "audio/mpeg" },
+        .{ ".mp4", "video/mp4" },         .{ ".ogg", "application/ogg" },          .{ ".otf", "font/otf" },
+        .{ ".pdf", "application/pdf" },   .{ ".png", "image/png" },                .{ ".svg", "image/svg+xml" },
+        .{ ".ttf", "font/ttf" },          .{ ".txt", "text/plain" },               .{ ".wav", "audio/x-wav" },
+        .{ ".webm", "video/webm" },       .{ ".webp", "image/webp" },              .{ ".woff", "font/woff" },
+        .{ ".woff2", "font/woff2" },      .{ ".xml", "application/xml" },          .{ ".zip", "application/zip" },
     };
     inline for (entries) |entry| if (std.ascii.eqlIgnoreCase(ext, entry[0])) return entry[1];
     return "text/plain";
@@ -239,8 +239,9 @@ test "native boot loads overrides, dependency digests, importmap and original pu
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const directories = [_][]const u8{
-        "reference/config/initializers", "reference/app/javascript/lib/.hidden", "reference/app/assets/stylesheets",
-        "reference/app/assets/images/.nested", "reference/public/assets", "crates/assets/overrides/lib", "crates/assets/vendor",
+        "reference/config/initializers",       "reference/app/javascript/lib/.hidden", "reference/app/assets/stylesheets",
+        "reference/app/assets/images/.nested", "reference/public/assets",              "crates/assets/overrides/lib",
+        "crates/assets/vendor",
     };
     for (directories) |directory| try tmp.dir.createDirPath(io, directory);
     const fixtures = [_][2][]const u8{

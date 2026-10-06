@@ -8,10 +8,18 @@ pub fn load(allocator: Allocator, path: []const u8) !Value {
     defer allocator.free(bytes);
     return std.json.parseFromSliceLeaky(Value, allocator, bytes, .{ .allocate = .alloc_always });
 }
-fn field(v: Value, key: []const u8) Value { return v.object.get(key).?; }
-fn text(v: Value) []const u8 { return v.string; }
-fn optionalText(v: Value) ?[]const u8 { return if (v == .string) v.string else null; }
-fn expiry(v: Value) !?i64 { return if (v == .null) null else try compat.unixSeconds(text(v)); }
+fn field(v: Value, key: []const u8) Value {
+    return v.object.get(key).?;
+}
+fn text(v: Value) []const u8 {
+    return v.string;
+}
+fn optionalText(v: Value) ?[]const u8 {
+    return if (v == .string) v.string else null;
+}
+fn expiry(v: Value) !?i64 {
+    return if (v == .null) null else try compat.unixSeconds(text(v));
+}
 fn expectJson(a: Allocator, expected: Value, actual: Value) !void {
     const x = try std.json.Stringify.valueAlloc(a, expected, .{});
     const y = try std.json.Stringify.valueAlloc(a, actual, .{});
@@ -88,7 +96,12 @@ test "native signed ID global ID Turbo stream golden vectors" {
     for (field(ids, "verify").array.items) |c| {
         const result = try secrets.verifyModelSignedId(a, text(field(c, "model")), text(field(c, "signed_id")), optionalText(field(c, "purpose")), try compat.unixSeconds(text(field(c, "now"))));
         const expected = field(c, "expected");
-        const numeric: ?i64 = switch (expected) { .null => null, .integer => expected.integer, .string => try std.fmt.parseInt(i64, expected.string, 10), else => unreachable };
+        const numeric: ?i64 = switch (expected) {
+            .null => null,
+            .integer => expected.integer,
+            .string => try std.fmt.parseInt(i64, expected.string, 10),
+            else => unreachable,
+        };
         try std.testing.expectEqual(numeric, result);
     }
     for (field(vectors, "global_ids").array.items) |c| {
@@ -186,7 +199,6 @@ test "native ActiveStorage disk key signing and verification golden vectors" {
         if (!std.mem.eql(u8, purpose, "blob_key")) continue;
         const actual = try secrets.verifyDiskKey(a, text(field(c, "message")), try compat.unixSeconds(text(field(c, "now"))));
         const expected = field(c, "expected_json");
-        if (expected == .null) try std.testing.expect(actual == null)
-        else try std.testing.expectEqualStrings(text(expected), actual.?);
+        if (expected == .null) try std.testing.expect(actual == null) else try std.testing.expectEqualStrings(text(expected), actual.?);
     }
 }

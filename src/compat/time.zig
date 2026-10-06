@@ -69,7 +69,9 @@ fn daysFromCivil(year: i64, month: i64, day: i64) i64 {
     return era * 146097 + doe - 719468;
 }
 
-pub fn unixSeconds(text: []const u8) !i64 { return (try parse(text)).seconds; }
+pub fn unixSeconds(text: []const u8) !i64 {
+    return (try parse(text)).seconds;
+}
 pub fn epochMilliseconds(text: []const u8) !i64 {
     const t = try parse(text);
     return t.seconds * 1000 + @divTrunc(t.nanos, 1_000_000);

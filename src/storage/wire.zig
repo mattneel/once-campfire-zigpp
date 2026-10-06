@@ -8,9 +8,21 @@ pub fn sanitize(allocator: Allocator, raw: []const u8) ![]const u8 {
     defer out.deinit();
     var i: usize = 0;
     while (i < trimmed.len) {
-        const len = std.unicode.utf8ByteSequenceLength(trimmed[i]) catch { try out.writer.writeAll("\xef\xbf\xbd"); i += 1; continue; };
-        if (i + len > trimmed.len) { try out.writer.writeAll("\xef\xbf\xbd"); i += 1; continue; }
-        const cp = std.unicode.utf8Decode(trimmed[i..][0..len]) catch { try out.writer.writeAll("\xef\xbf\xbd"); i += 1; continue; };
+        const len = std.unicode.utf8ByteSequenceLength(trimmed[i]) catch {
+            try out.writer.writeAll("\xef\xbf\xbd");
+            i += 1;
+            continue;
+        };
+        if (i + len > trimmed.len) {
+            try out.writer.writeAll("\xef\xbf\xbd");
+            i += 1;
+            continue;
+        }
+        const cp = std.unicode.utf8Decode(trimmed[i..][0..len]) catch {
+            try out.writer.writeAll("\xef\xbf\xbd");
+            i += 1;
+            continue;
+        };
         if (cp == 0x202e or (cp < 128 and std.mem.indexOfScalar(u8, "%$|:;/<>?*\"\t\r\n\\", @intCast(cp)) != null)) try out.writer.writeByte('-') else try out.writer.writeAll(trimmed[i..][0..len]);
         i += len;
     }
@@ -27,11 +39,16 @@ fn escape(allocator: Allocator, raw: []const u8, mode: Escape) ![]const u8 {
             .traditional => std.mem.indexOfScalar(u8, " !#$+.^_`|~-", b) != null,
             .rfc5987 => std.mem.indexOfScalar(u8, "!#$&+.^_`|~-", b) != null,
         };
-        if (allowed) try out.writer.writeByte(b) else { const hex = "0123456789ABCDEF"; try out.writer.writeAll(&.{ '%', hex[b >> 4], hex[b & 15] }); }
+        if (allowed) try out.writer.writeByte(b) else {
+            const hex = "0123456789ABCDEF";
+            try out.writer.writeAll(&.{ '%', hex[b >> 4], hex[b & 15] });
+        }
     }
     return out.toOwnedSlice();
 }
-pub fn segment(allocator: Allocator, raw: []const u8) ![]const u8 { return escape(allocator, raw, .segment); }
+pub fn segment(allocator: Allocator, raw: []const u8) ![]const u8 {
+    return escape(allocator, raw, .segment);
+}
 pub fn filenamePath(allocator: Allocator, raw: []const u8) ![]const u8 {
     const clean = try sanitize(allocator, raw);
     defer allocator.free(clean);
@@ -58,7 +75,10 @@ pub fn disposition(allocator: Allocator, kind: []const u8, raw: []const u8) ![]c
     defer ascii.deinit();
     var iter = (try std.unicode.Utf8View.init(clean)).iterator();
     while (iter.nextCodepoint()) |cp| {
-        if (cp < 128) { try ascii.writer.writeByte(@intCast(cp)); continue; }
+        if (cp < 128) {
+            try ascii.writer.writeByte(@intCast(cp));
+            continue;
+        }
         var replacement: []const u8 = "?";
         // Tiny immutable table; binary search avoids work proportional to table size.
         var lo: usize = 0;
@@ -88,7 +108,10 @@ pub fn ranges(allocator: Allocator, raw: ?[]const u8, size: usize) !?[]const Ran
     while (std.mem.indexOf(u8, rest, "bytes=")) |at| {
         rest = rest[at + 6 ..];
         const end = std.mem.indexOfScalar(u8, rest, ';') orelse rest.len;
-        if (end != 0) { spec = rest[0..end]; break; }
+        if (end != 0) {
+            spec = rest[0..end];
+            break;
+        }
     }
     const value = spec orelse return null;
     if (std.mem.count(u8, value, ",") >= 100) return null;
@@ -100,7 +123,10 @@ pub fn ranges(allocator: Allocator, raw: ?[]const u8, size: usize) !?[]const Ran
     while (parts.next()) |p| {
         const part = if (first) p else std.mem.trimStart(u8, p, " \t");
         first = false;
-        const dash = std.mem.indexOfScalar(u8, part, '-') orelse { list.deinit(allocator); return null; };
+        const dash = std.mem.indexOfScalar(u8, part, '-') orelse {
+            list.deinit(allocator);
+            return null;
+        };
         const rhs = part[dash + 1 ..];
         const rhs_end = std.mem.indexOfScalar(u8, rhs, '-') orelse rhs.len;
         const left = part[0..dash];
@@ -108,18 +134,27 @@ pub fn ranges(allocator: Allocator, raw: ?[]const u8, size: usize) !?[]const Ran
         var start: u128 = 0;
         var end: u128 = size - 1;
         if (left.len == 0) {
-            if (rhs.len == 0 or std.mem.trim(u8, rhs, "-").len == 0) { list.deinit(allocator); return null; }
+            if (rhs.len == 0 or std.mem.trim(u8, rhs, "-").len == 0) {
+                list.deinit(allocator);
+                return null;
+            }
             const suffix = rubyInteger(right);
             start = size -| suffix;
         } else {
             start = rubyInteger(left);
             if (right.len != 0) {
                 end = rubyInteger(right);
-                if (end < start) { list.deinit(allocator); return null; }
+                if (end < start) {
+                    list.deinit(allocator);
+                    return null;
+                }
                 end = @min(end, size - 1);
             }
         }
-        if (start <= end) { try list.append(allocator, .{ .start = @intCast(start), .end = @intCast(end) }); total += end - start + 1; }
+        if (start <= end) {
+            try list.append(allocator, .{ .start = @intCast(start), .end = @intCast(end) });
+            total += end - start + 1;
+        }
     }
     if (total > size) list.clearRetainingCapacity();
     return try list.toOwnedSlice(allocator);
@@ -132,9 +167,11 @@ fn rubyInteger(raw: []const u8) u128 {
     var digit = false;
     var underscore = false;
     for (s) |b| {
-        if (b >= '0' and b <= '9') { result = result *| 10 +| (b - '0'); digit = true; underscore = false; }
-        else if (b == '_' and digit and !underscore) underscore = true
-        else break;
+        if (b >= '0' and b <= '9') {
+            result = result *| 10 +| (b - '0');
+            digit = true;
+            underscore = false;
+        } else if (b == '_' and digit and !underscore) underscore = true else break;
     }
     return result;
 }

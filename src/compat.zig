@@ -238,11 +238,19 @@ fn invalidOrError(err: anyerror) error{OutOfMemory}!@TypeOf(null) {
     return null;
 }
 fn integer(v: Value) ?i64 {
-    return switch (v) { .integer => v.integer, .string => std.fmt.parseInt(i64, std.mem.trim(u8, v.string, " \t\r\n"), 10) catch null, else => null };
+    return switch (v) {
+        .integer => v.integer,
+        .string => std.fmt.parseInt(i64, std.mem.trim(u8, v.string, " \t\r\n"), 10) catch null,
+        else => null,
+    };
 }
 
 fn base64Encode(allocator: Allocator, bytes: []const u8, encoding: Encoding) ![]const u8 {
-    const codec = switch (encoding) { .standard => std.base64.standard.Encoder, .url => std.base64.url_safe_no_pad.Encoder, .url_padded => std.base64.url_safe.Encoder };
+    const codec = switch (encoding) {
+        .standard => std.base64.standard.Encoder,
+        .url => std.base64.url_safe_no_pad.Encoder,
+        .url_padded => std.base64.url_safe.Encoder,
+    };
     const result = try allocator.alloc(u8, codec.calcSize(bytes.len));
     return codec.encode(result, bytes);
 }
@@ -252,7 +260,11 @@ fn base64Decode(allocator: Allocator, encoded: []const u8) error{ OutOfMemory, I
     if (url and std.mem.indexOfAny(u8, encoded, "+/") != null) {
         const normalized = try allocator.dupe(u8, encoded);
         defer allocator.free(normalized);
-        for (normalized) |*c| switch (c.*) { '-' => c.* = '+', '_' => c.* = '/', else => {} };
+        for (normalized) |*c| switch (c.*) {
+            '-' => c.* = '+',
+            '_' => c.* = '/',
+            else => {},
+        };
         return base64Decode(allocator, normalized);
     }
     const padded = std.mem.indexOfScalar(u8, encoded, '=') != null;
@@ -284,9 +296,15 @@ fn sign(allocator: Allocator, bytes: []const u8, key: []const u8, digest: Digest
 fn macHex(data: []const u8, key: []const u8, digest: Digest, hex: *[64]u8) usize {
     var mac: [32]u8 = undefined;
     const n: usize = if (digest == .sha1) 20 else 32;
-    switch (digest) { .sha1 => Sha1.create(mac[0..20], data, key), .sha256 => Sha256.create(&mac, data, key) }
+    switch (digest) {
+        .sha1 => Sha1.create(mac[0..20], data, key),
+        .sha256 => Sha256.create(&mac, data, key),
+    }
     const alphabet = "0123456789abcdef";
-    for (mac[0..n], 0..) |c, i| { hex[i * 2] = alphabet[c >> 4]; hex[i * 2 + 1] = alphabet[c & 15]; }
+    for (mac[0..n], 0..) |c, i| {
+        hex[i * 2] = alphabet[c >> 4];
+        hex[i * 2 + 1] = alphabet[c & 15];
+    }
     return n * 2;
 }
 fn secureEqual(a: []const u8, b: []const u8) bool {
@@ -311,7 +329,12 @@ fn jsonEncode(allocator: Allocator, value: Value, escape_html: bool) ![]const u8
     if (!escape_html) return out.toOwnedSlice();
     var escaped = Io.Writer.Allocating.init(allocator);
     defer escaped.deinit();
-    for (out.written()) |c| switch (c) { '<' => try escaped.writer.writeAll("\\u003c"), '>' => try escaped.writer.writeAll("\\u003e"), '&' => try escaped.writer.writeAll("\\u0026"), else => try escaped.writer.writeByte(c) };
+    for (out.written()) |c| switch (c) {
+        '<' => try escaped.writer.writeAll("\\u003c"),
+        '>' => try escaped.writer.writeAll("\\u003e"),
+        '&' => try escaped.writer.writeAll("\\u0026"),
+        else => try escaped.writer.writeByte(c),
+    };
     return escaped.toOwnedSlice();
 }
 fn parseValue(allocator: Allocator, bytes: []const u8) !Value {
@@ -359,7 +382,17 @@ fn generateValue(allocator: Allocator, value: Value, purpose: ?[]const u8, expir
 fn purposeMatches(p: ?Value, purpose: ?[]const u8) bool {
     const expected = purpose orelse "";
     const v = p orelse return expected.len == 0;
-    return switch (v) { .null => expected.len == 0, .string => std.mem.eql(u8, v.string, expected), .bool => std.mem.eql(u8, if (v.bool) "true" else "false", expected), .integer => blk: { var buf: [32]u8 = undefined; const s = std.fmt.bufPrint(&buf, "{d}", .{v.integer}) catch return false; break :blk std.mem.eql(u8, s, expected); }, else => false };
+    return switch (v) {
+        .null => expected.len == 0,
+        .string => std.mem.eql(u8, v.string, expected),
+        .bool => std.mem.eql(u8, if (v.bool) "true" else "false", expected),
+        .integer => blk: {
+            var buf: [32]u8 = undefined;
+            const s = std.fmt.bufPrint(&buf, "{d}", .{v.integer}) catch return false;
+            break :blk std.mem.eql(u8, s, expected);
+        },
+        else => false,
+    };
 }
 fn checkMetadata(rails: Value, purpose: ?[]const u8, now: i64) !void {
     if (rails != .object) return error.InvalidMessage;
@@ -436,7 +469,10 @@ fn combinePurposes(allocator: Allocator, name: []const u8, purpose: ?[]const u8)
     var out = Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     for (name, 0..) |c, i| {
-        if (c == ':') { if (i > 0 and name[i - 1] == ':') try out.writer.writeByte('/'); continue; }
+        if (c == ':') {
+            if (i > 0 and name[i - 1] == ':') try out.writer.writeByte('/');
+            continue;
+        }
         if (std.ascii.isUpper(c)) {
             const prev = if (i > 0) name[i - 1] else 0;
             const next = if (i + 1 < name.len) name[i + 1] else 0;
@@ -454,15 +490,26 @@ fn combinePurposes(allocator: Allocator, name: []const u8, purpose: ?[]const u8)
 pub fn htmlEscape(writer: *Io.Writer, value: []const u8) !void {
     var start: usize = 0;
     for (value, 0..) |c, i| {
-        const replacement: []const u8 = switch (c) { '&' => "&amp;", '<' => "&lt;", '>' => "&gt;", '"' => "&quot;", '\'' => "&#39;", else => continue };
+        const replacement: []const u8 = switch (c) {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            '\'' => "&#39;",
+            else => continue,
+        };
         try writer.writeAll(value[start..i]);
         try writer.writeAll(replacement);
         start = i + 1;
     }
     try writer.writeAll(value[start..]);
 }
-pub fn urlEncode(allocator: Allocator, value: []const u8) ![]const u8 { return percentEncode(allocator, value, false); }
-pub fn cookieEscape(allocator: Allocator, value: []const u8) ![]const u8 { return percentEncode(allocator, value, true); }
+pub fn urlEncode(allocator: Allocator, value: []const u8) ![]const u8 {
+    return percentEncode(allocator, value, false);
+}
+pub fn cookieEscape(allocator: Allocator, value: []const u8) ![]const u8 {
+    return percentEncode(allocator, value, true);
+}
 fn percentEncode(allocator: Allocator, value: []const u8, cookie: bool) ![]const u8 {
     var out = Io.Writer.Allocating.init(allocator);
     defer out.deinit();
@@ -528,7 +575,9 @@ pub fn permanentExpires(now_unix: i64) !i64 {
     return time.unixSeconds(buf[0..date.len]);
 }
 
-test { _ = @import("compat/golden.zig"); }
+test {
+    _ = @import("compat/golden.zig");
+}
 
 test "native deterministic AES GCM generation matches Rails ciphertext vectors" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

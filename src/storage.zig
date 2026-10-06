@@ -38,12 +38,19 @@ pub const Storage = struct {
     pub fn init(allocator: Allocator, io: Io, root_files_path: []const u8, database: *Database, secrets: *Secrets) !Storage {
         try init_mutex.lock(io);
         defer init_mutex.unlock(io);
-        if (!vips_initialized) { try io.blocking(media.init, .{}); vips_initialized = true; }
+        if (!vips_initialized) {
+            try io.blocking(media.init, .{});
+            vips_initialized = true;
+        }
         const root = try io.blocking(media.openRoot, .{ allocator, root_files_path });
         return .{ .allocator = allocator, .io = io, .root = root, .database = database, .secrets = secrets };
     }
-    pub fn deinit(self: *Storage) void { _ = self.io.blocking(media.c.close, .{self.root}); }
-    pub fn vipsVersion() []const u8 { return media.version(); }
+    pub fn deinit(self: *Storage) void {
+        _ = self.io.blocking(media.c.close, .{self.root});
+    }
+    pub fn vipsVersion() []const u8 {
+        return media.version();
+    }
 
     pub fn avatar(self: *Storage, allocator: Allocator, io: Io, user: model.User, now: i64) !?Result {
         const blob = user.avatar orelse try self.database.avatar(allocator, io, user.id) orelse return null;
@@ -217,7 +224,10 @@ pub const Storage = struct {
         const has_range = request.range != null and std.mem.trim(u8, request.range.?, " \t").len != 0 and std.mem.indexOf(u8, request.path, "/blobs/proxy/") != null;
         const etag = try pathEtag(allocator, request.path);
         if (forever and !has_range and fresh(request.if_none_match, etag)) return .{ .status = 304, .content_type = content_type, .body = "", .headers = try cacheHeaders(allocator, etag) };
-        const data = io.blocking(media.read, .{ allocator, self.root, blob.key }) catch |err| switch (err) { error.FileNotFound, error.UnsafeStorageKey => return notFound(), else => return err };
+        const data = io.blocking(media.read, .{ allocator, self.root, blob.key }) catch |err| switch (err) {
+            error.FileNotFound, error.UnsafeStorageKey => return notFound(),
+            else => return err,
+        };
         const ranged = if (has_range) try wire.ranges(allocator, request.range, data.len) else null;
         if (has_range and (ranged == null or ranged.?.len == 0)) return .{ .status = 416, .content_type = content_type, .body = "" };
         var headers: std.ArrayList(Header) = .empty;
@@ -254,7 +264,10 @@ pub const Storage = struct {
             try headers.append(allocator, .{ .name = "Content-Length", .value = "0" });
             return .{ .status = 200, .content_type = owned_type, .body = "", .headers = try headers.toOwnedSlice(allocator) };
         }
-        const mtime = io.blocking(media.modified, .{ self.root, allocator, key }) catch |err| switch (err) { error.FileNotFound, error.UnsafeStorageKey => return notFound(), else => return err };
+        const mtime = io.blocking(media.modified, .{ self.root, allocator, key }) catch |err| switch (err) {
+            error.FileNotFound, error.UnsafeStorageKey => return notFound(),
+            else => return err,
+        };
         const modified = try httpDate(allocator, mtime);
         if (request.if_modified_since) |conditional| if (std.mem.eql(u8, modified, conditional)) return .{ .status = 304, .content_type = owned_type, .body = "", .headers = try headers.toOwnedSlice(allocator) };
         const data = try io.blocking(media.read, .{ allocator, self.root, key });
@@ -310,7 +323,9 @@ fn variable(blob: model.Blob) bool {
     for ([_][]const u8{ "image/png", "image/gif", "image/jpeg", "image/tiff", "image/webp", "image/avif", "image/heic", "image/heif" }) |supported| if (std.mem.eql(u8, ct, supported)) return true;
     return false;
 }
-fn video(blob: model.Blob) bool { return std.mem.startsWith(u8, blob.content_type orelse "", "video/"); }
+fn video(blob: model.Blob) bool {
+    return std.mem.startsWith(u8, blob.content_type orelse "", "video/");
+}
 fn forcedDisposition(blob: model.Blob) ?[]const u8 {
     const ct = blob.content_type orelse "application/octet-stream";
     for ([_][]const u8{ "image/webp", "image/avif", "image/png", "image/gif", "image/jpeg", "image/tiff", "image/bmp", "image/vnd.adobe.photoshop", "image/vnd.microsoft.icon", "application/pdf" }) |allowed| if (std.mem.eql(u8, ct, allowed)) return null;
@@ -335,7 +350,12 @@ fn randomKey(allocator: Allocator, io: Io) ![]const u8 {
     while (i < key.len) {
         var random: [32]u8 = undefined;
         try io.randomSecure(&random);
-        for (random) |b| { if (b >= 252) continue; key[i] = alphabet[b % 36]; i += 1; if (i == key.len) break; }
+        for (random) |b| {
+            if (b >= 252) continue;
+            key[i] = alphabet[b % 36];
+            i += 1;
+            if (i == key.len) break;
+        }
     }
     return key;
 }
@@ -346,13 +366,19 @@ fn jsonString(value: std.json.Value, key: []const u8) ?[]const u8 {
     const v = value.object.get(key) orelse return null;
     return if (v == .string) v.string else null;
 }
-fn safeHeader(value: []const u8) bool { for (value) |b| if (b < 32 or b == 127) return false; return true; }
+fn safeHeader(value: []const u8) bool {
+    for (value) |b| if (b < 32 or b == 127) return false;
+    return true;
+}
 fn jsonDiskPayload(allocator: Allocator, key: []const u8, disposition: []const u8, content_type: []const u8) ![]const u8 {
     var out: Io.Writer.Allocating = .init(allocator);
     defer out.deinit();
-    try out.writer.writeAll("{\"key\":"); try std.json.Stringify.value(key, .{ .emit_null_optional_fields = true }, &out.writer);
-    try out.writer.writeAll(",\"disposition\":"); try std.json.Stringify.value(disposition, .{}, &out.writer);
-    try out.writer.writeAll(",\"content_type\":"); try std.json.Stringify.value(content_type, .{}, &out.writer);
+    try out.writer.writeAll("{\"key\":");
+    try std.json.Stringify.value(key, .{ .emit_null_optional_fields = true }, &out.writer);
+    try out.writer.writeAll(",\"disposition\":");
+    try std.json.Stringify.value(disposition, .{}, &out.writer);
+    try out.writer.writeAll(",\"content_type\":");
+    try std.json.Stringify.value(content_type, .{}, &out.writer);
     try out.writer.writeAll(",\"service_name\":\"local\"}");
     var escaped: Io.Writer.Allocating = .init(allocator);
     defer escaped.deinit();
@@ -370,7 +396,9 @@ fn requestedDisposition(allocator: Allocator, query: []const u8) ![]const u8 {
     while (parts.next()) |part| if (std.mem.startsWith(u8, part, "disposition=")) {
         const encoded = try allocator.dupe(u8, part[12..]);
         defer allocator.free(encoded);
-        for (encoded) |*ch| if (ch.* == '+') { ch.* = ' '; };
+        for (encoded) |*ch| if (ch.* == '+') {
+            ch.* = ' ';
+        };
         const value = try wire.decodeSegment(allocator, encoded);
         if (!safeHeader(value)) return error.InvalidDisposition;
         return value;
@@ -417,8 +445,19 @@ fn multipart(allocator: Allocator, data: []const u8, ranges: []const wire.Range,
     try out.writer.print("\r\n--{s}--\r\n", .{boundary});
     return out.toOwnedSlice();
 }
-fn notFound() Result { return .{ .status = 404, .content_type = "text/plain", .body = "" }; }
-fn invalidOrError(err: anyerror) !Result { if (err == error.OutOfMemory) return err; return notFound(); }
+fn notFound() Result {
+    return .{ .status = 404, .content_type = "text/plain", .body = "" };
+}
+fn invalidOrError(err: anyerror) !Result {
+    if (err == error.OutOfMemory) return err;
+    return notFound();
+}
 
-test { _ = @import("storage/variation.zig"); _ = @import("storage/wire.zig"); _ = @import("storage/media.zig"); }
-test { _ = @import("storage/tests.zig"); }
+test {
+    _ = @import("storage/variation.zig");
+    _ = @import("storage/wire.zig");
+    _ = @import("storage/media.zig");
+}
+test {
+    _ = @import("storage/tests.zig");
+}

@@ -11,7 +11,9 @@ pub const Variation = struct {
     empty: bool = false,
     format_explicit: bool = true,
 
-    pub fn avatar() Variation { return .{ .width = 512, .height = 512, .format = "webp", .symbol_format = true }; }
+    pub fn avatar() Variation {
+        return .{ .width = 512, .height = 512, .format = "webp", .symbol_format = true };
+    }
     pub fn logo(size: u16) !Variation {
         if (size != 512 and size != 192) return error.UnsupportedVariation;
         return .{ .width = size, .height = size, .format = "png", .symbol_format = true };
@@ -38,7 +40,10 @@ pub const Variation = struct {
             } else return error.UnsupportedVariation;
         }
         var allowed_format = false;
-        for ([_][]const u8{ "png", "jpg", "jpeg", "jpe", "jif", "jfif", "jfi", "gif", "webp" }) |allowed| if (std.ascii.eqlIgnoreCase(format, allowed)) { allowed_format = true; break; };
+        for ([_][]const u8{ "png", "jpg", "jpeg", "jpe", "jif", "jfif", "jfi", "gif", "webp" }) |allowed| if (std.ascii.eqlIgnoreCase(format, allowed)) {
+            allowed_format = true;
+            break;
+        };
         if (!allowed_format) return error.UnsupportedVariation;
         const named = if (width) |w| if (height) |h| (w == 512 and h == 512 and (std.mem.eql(u8, format, "webp") or std.mem.eql(u8, format, "png"))) or (w == 192 and h == 192 and std.mem.eql(u8, format, "png")) or (w == 1200 and h == 800) else false else height == null and (v.object.count() == 0 or std.mem.eql(u8, format, "webp"));
         if (!named) return error.UnsupportedVariation;
@@ -88,14 +93,20 @@ fn bytes(w: *std.Io.Writer, value: []const u8) !void {
     try rubyLong(w, @intCast(value.len));
     try w.writeAll(value);
 }
-fn symbol(w: *std.Io.Writer, value: []const u8) !void { try w.writeByte(':'); try bytes(w, value); }
+fn symbol(w: *std.Io.Writer, value: []const u8) !void {
+    try w.writeByte(':');
+    try bytes(w, value);
+}
 fn rubyLong(w: *std.Io.Writer, value: u64) !void {
     if (value == 0) return w.writeByte(0);
     if (value < 123) return w.writeByte(@intCast(value + 5));
     var n = value;
     var buf: [9]u8 = undefined;
     var len: usize = 1;
-    while (n != 0) : (len += 1) { buf[len] = @truncate(n); n >>= 8; }
+    while (n != 0) : (len += 1) {
+        buf[len] = @truncate(n);
+        n >>= 8;
+    }
     buf[0] = @intCast(len - 1);
     try w.writeAll(buf[0..len]);
 }
