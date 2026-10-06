@@ -2,6 +2,7 @@
 const std = @import("std");
 const model = @import("model.zig");
 const compat = @import("compat.zig");
+const time = @import("compat/time.zig");
 const richtext = @import("richtext.zig");
 const schema = @import("db/schema.zig");
 const words = @import("db/word_ranges.zig").ranges;
@@ -169,9 +170,14 @@ pub const Database = struct {
         var s = try Statement.init(self.writer, "SELECT last_active_at FROM sessions WHERE id=?", &.{int(id)});
         defer s.deinit();
         if (!try s.next()) return error.NotFound;
-        const threshold = try subtractSeconds(self.allocator, now, 3600);
-        defer self.allocator.free(threshold);
-        if (std.mem.order(u8, s.bytes(0), threshold) == .lt) try exec(self.writer, "UPDATE sessions SET ip_address=?,user_agent=?,last_active_at=?,updated_at=? WHERE id=?", &.{ optional(remote_ip), optional(user_agent), text(now), text(now), int(id) });
+        // Session::needs_resume compares instants, not SQLite's millisecond date
+        // arithmetic or timestamp text (which can omit a zero fraction).
+        const previous = try time.parse(s.bytes(0));
+        const current = try time.parse(now);
+        const threshold_seconds = current.seconds - 3600;
+        if (previous.seconds < threshold_seconds or (previous.seconds == threshold_seconds and previous.nanos < current.nanos)) {
+            try exec(self.writer, "UPDATE sessions SET ip_address=?,user_agent=?,last_active_at=?,updated_at=? WHERE id=?", &.{ optional(remote_ip), optional(user_agent), text(now), text(now), int(id) });
+        }
         try exec(self.writer, "COMMIT", &.{});
     }
 
@@ -437,8 +443,9 @@ fn userByEmailIn(allocator: Allocator, conn: Conn, email: []const u8) !?model.Us
     return userWhere(allocator, conn, "u.email_address=?", &.{text(email)});
 }
 
-fn failure(conn: Conn, code: c_int) Error {
-    std.log.err("SQLite ({d}): {s}", .{ code, std.mem.span(c.sqlite3_errmsg(conn)) });
+fn failure(code: c_int) Error {
+    // Like rusqlite, return SQLite failures to the caller. The request boundary
+    // logs unhandled errors; handled constraints must not also be logged here.
     return switch (code & 0xff) {
         c.SQLITE_BUSY, c.SQLITE_LOCKED => error.DatabaseBusy,
         c.SQLITE_CONSTRAINT => error.DatabaseConstraint,
@@ -449,12 +456,11 @@ fn failure(conn: Conn, code: c_int) Error {
 }
 
 const Statement = struct {
-    conn: Conn,
     raw: *c.sqlite3_stmt,
     fn init(conn: Conn, sql: [:0]const u8, values: []const Value) !Statement {
         var raw: ?*c.sqlite3_stmt = null;
         const code = c.sqlite3_prepare_v2(conn, sql.ptr, @intCast(sql.len), &raw, null);
-        if (code != c.SQLITE_OK) return failure(conn, code);
+        if (code != c.SQLITE_OK) return failure(code);
         const stmt = raw orelse return error.DatabaseFailure;
         errdefer _ = c.sqlite3_finalize(stmt);
         if (@as(usize, @intCast(c.sqlite3_bind_parameter_count(stmt))) != values.len) return error.InvalidParam;
@@ -465,9 +471,9 @@ const Statement = struct {
                 .text => |s| c.sqlite3_bind_text(stmt, @intCast(i), s.ptr, @intCast(s.len), null),
                 .null => c.sqlite3_bind_null(stmt, @intCast(i)),
             };
-            if (result != c.SQLITE_OK) return failure(conn, result);
+            if (result != c.SQLITE_OK) return failure(result);
         }
-        return .{ .conn = conn, .raw = stmt };
+        return .{ .raw = stmt };
     }
     fn deinit(s: *Statement) void {
         _ = c.sqlite3_finalize(s.raw);
@@ -477,7 +483,7 @@ const Statement = struct {
         return switch (result) {
             c.SQLITE_ROW => true,
             c.SQLITE_DONE => false,
-            else => failure(s.conn, result),
+            else => failure(result),
         };
     }
     fn integer(s: *Statement, column: c_int) i64 {
@@ -515,10 +521,10 @@ fn open(path: [:0]const u8) !Conn {
     const code = c.sqlite3_open_v2(path.ptr, &conn, c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_NOMUTEX | c.SQLITE_OPEN_URI, null);
     const db = conn orelse return error.DatabaseIo;
     errdefer _ = c.sqlite3_close(db);
-    if (code != c.SQLITE_OK) return failure(db, code);
+    if (code != c.SQLITE_OK) return failure(code);
     _ = c.sqlite3_extended_result_codes(db, 1);
     const timeout_code = c.sqlite3_busy_timeout(db, 5000);
-    if (timeout_code != c.SQLITE_OK) return failure(db, timeout_code);
+    if (timeout_code != c.SQLITE_OK) return failure(timeout_code);
     for ([_][:0]const u8{ "PRAGMA foreign_keys=ON", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA journal_size_limit=67108864", "PRAGMA cache_size=2000" }) |sql| try exec(db, sql, &.{});
     return db;
 }
@@ -527,7 +533,7 @@ fn prepareSchema(conn: Conn, now: []const u8) !void {
         try exec(conn, "BEGIN IMMEDIATE", &.{});
         errdefer rollback(conn);
         const code = c.sqlite3_exec(conn, schema.sql.ptr, null, null, null);
-        if (code != c.SQLITE_OK) return failure(conn, code);
+        if (code != c.SQLITE_OK) return failure(code);
         var n = migrations.len;
         while (n > 0) {
             n -= 1;
@@ -740,7 +746,7 @@ fn subtractSeconds(allocator: Allocator, now: []const u8, seconds_ago: i64) ![]c
     var calendar: c.struct_tm = undefined;
     if (c.gmtime_r(&epoch, &calendar) == null) return error.InvalidParam;
     const fraction = if (std.mem.indexOfScalar(u8, now, '.')) |dot| now[dot..] else "";
-    return std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}{s}", .{ calendar.tm_year + 1900, calendar.tm_mon + 1, calendar.tm_mday, calendar.tm_hour, calendar.tm_min, calendar.tm_sec, fraction });
+    return std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}{s}", .{ @as(u16, @intCast(calendar.tm_year + 1900)), @as(u8, @intCast(calendar.tm_mon + 1)), @as(u8, @intCast(calendar.tm_mday)), @as(u8, @intCast(calendar.tm_hour)), @as(u8, @intCast(calendar.tm_min)), @as(u8, @intCast(calendar.tm_sec)), fraction });
 }
 fn uuid(allocator: Allocator, io: Io) ![]const u8 {
     var bytes: [16]u8 = undefined;
@@ -866,7 +872,7 @@ fn seed(conn: Conn) !void {
         \\INSERT INTO active_storage_attachments(record_type,record_id,name,blob_id,created_at) VALUES('User',1,'avatar',1,'2026-01-01 00:00:00'),('Account',1,'logo',2,'2026-01-01 00:00:00');
     ;
     const code = c.sqlite3_exec(conn, sql, null, null, null);
-    if (code != c.SQLITE_OK) return failure(conn, code);
+    if (code != c.SQLITE_OK) return failure(code);
 }
 
 test "membership reachability includes invisible but never grants administrators access" {
@@ -1011,6 +1017,8 @@ test "sessions active user bans bound token and strict hourly microsecond resume
     try std.testing.expectError(error.DatabaseConstraint, t.db.createSession(a, io, 1, session.token, null, null, "2026-01-10 12:00:00"));
     try t.db.refreshSession(io, session.id, "192.0.2.2", "ua2", "2026-01-10 13:00:00");
     try std.testing.expectEqualStrings("2026-01-10 12:00:00", (try t.db.findSession(a, io, session.token)).?.last_active_at);
+    try t.db.refreshSession(io, session.id, "192.0.2.2", "ua2", "2026-01-10 13:00:00.000000");
+    try std.testing.expectEqualStrings("2026-01-10 12:00:00", (try t.db.findSession(a, io, session.token)).?.last_active_at);
     try t.db.refreshSession(io, session.id, "192.0.2.2", "ua2", "2026-01-10 13:00:00.000001");
     const updated = (try t.db.findSession(a, io, session.token)).?;
     try std.testing.expectEqualStrings("2026-01-10 13:00:00.000001", updated.last_active_at);
@@ -1019,6 +1027,12 @@ test "sessions active user bans bound token and strict hourly microsecond resume
     try std.testing.expect(try fields.next());
     try std.testing.expectEqualStrings("192.0.2.2", fields.bytes(0));
     try std.testing.expectEqualStrings("ua2", fields.bytes(1));
+    try t.db.refreshSession(io, session.id, "192.0.2.3", "ua3", "2026-01-10 14:00:00.000000");
+    try std.testing.expectEqualStrings(updated.last_active_at, (try t.db.findSession(a, io, session.token)).?.last_active_at);
+    try t.db.refreshSession(io, session.id, "192.0.2.3", "ua3", "2026-01-10 14:00:00.000001");
+    try std.testing.expectEqualStrings(updated.last_active_at, (try t.db.findSession(a, io, session.token)).?.last_active_at);
+    try t.db.refreshSession(io, session.id, "192.0.2.3", "ua3", "2026-01-10 14:00:00.000002");
+    try std.testing.expectEqualStrings("2026-01-10 14:00:00.000002", (try t.db.findSession(a, io, session.token)).?.last_active_at);
     try exec(t.db.writer, "UPDATE users SET status=2 WHERE id=1", &.{});
     try std.testing.expect((try t.db.findSession(a, io, session.token)) == null);
     try t.db.deleteSession(io, session.token);
@@ -1073,9 +1087,14 @@ test "literal search sanitized Unicode chronological last100 reachability and hi
     try std.testing.expectEqual(@as(usize, 0), (try t.db.search(a, io, 1, "secret", null)).messages.len);
     try std.testing.expectEqual(@as(usize, 1), (try t.db.search(a, io, 2, "secret", 2)).messages.len);
     try std.testing.expect((try t.db.search(a, io, 1, "\"*\"", null)).query == null);
-    try std.testing.expectEqualStrings("héllo  café_1 日本 ‿ a b  ", try sanitizeQuery(a, "héllo, café_1 日本 ‿ a-b ❤"));
-    try std.testing.expectEqualStrings("\"eel\" \"shark\"", try matchTerms(a, "eel\\x00shark"));
-    try std.testing.expectEqualStrings("\"a\"\"b\"", try matchTerms(a, "a\"b"));
+    const unicode_query = try t.db.search(a, io, 1, "héllo, café_1 日本 ‿ a-b ❤", null);
+    try std.testing.expectEqualStrings("héllo  café_1 日本 ‿ a b  ", unicode_query.query.?);
+    const nul_query = try t.db.search(a, io, 1, "eel\x00shark", null);
+    try std.testing.expectEqualStrings("eel shark", nul_query.query.?);
+    try std.testing.expectEqual(@as(usize, 100), nul_query.messages.len);
+    const escaped_query = try t.db.search(a, io, 1, "eel\\x00shark", null);
+    try std.testing.expectEqualStrings("eel x00shark", escaped_query.query.?);
+    try std.testing.expectEqual(@as(usize, 0), escaped_query.messages.len);
     for (0..12) |i| {
         const query = try std.fmt.allocPrint(a, "query {d}", .{i});
         const now = try std.fmt.allocPrint(a, "2026-01-11 12:00:{d:0>2}", .{i});
@@ -1085,7 +1104,7 @@ test "literal search sanitized Unicode chronological last100 reachability and hi
     const history = try t.db.search(a, io, 1, null, null);
     try std.testing.expectEqual(@as(usize, 10), history.recent_searches.len);
     try std.testing.expectEqualStrings("query 5", history.recent_searches[0]);
-    _ = try t.db.recordSearch(a, io, 1, "hello, world", "2026-01-11 14:00:00");
+    try std.testing.expectEqualStrings("hello  world", try t.db.recordSearch(a, io, 1, "hello, world", "2026-01-11 14:00:00"));
     try std.testing.expectEqualStrings("hello  world", (try t.db.search(a, io, 1, null, null)).recent_searches[0]);
     try t.db.clearSearch(io, 1);
     try std.testing.expectEqual(@as(usize, 0), (try t.db.search(a, io, 1, null, null)).recent_searches.len);
