@@ -33,6 +33,7 @@ const message_select = "SELECT m.id,m.client_message_id,m.room_id,m.created_at,m
 
 pub const Database = struct {
     allocator: Allocator,
+    io: Io,
     writer: Conn,
     readers: []Reader,
     writer_mutex: Io.Mutex = .init,
@@ -40,6 +41,11 @@ pub const Database = struct {
     available: Io.Condition = .init,
 
     pub fn init(allocator: Allocator, io: Io, path: []const u8, readers: usize) !Database {
+        const now=try compat.nowText(allocator,io); defer allocator.free(now);
+        return io.blocking(initIn,.{allocator,io,path,readers,now});
+    }
+
+    fn initIn(allocator: Allocator, io: Io, path: []const u8, readers: usize, now: []const u8) !Database {
         if (readers == 0 or path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null or std.mem.eql(u8, path, ":memory:")) return error.InvalidParam;
         const path_z = try allocator.dupeZ(u8, path);
         defer allocator.free(path_z);
@@ -47,7 +53,7 @@ pub const Database = struct {
         errdefer _ = c.sqlite3_close(writer);
         const filename=c.sqlite3_db_filename(writer,"main");
         if (filename==null or std.mem.span(filename).len==0) return error.InvalidParam;
-        try prepareSchema(allocator, io, writer);
+        try prepareSchema(writer,now);
         const pool = try allocator.alloc(Reader, readers);
         errdefer allocator.free(pool);
         var opened: usize = 0;
@@ -59,11 +65,14 @@ pub const Database = struct {
             opened += 1;
             try exec(r.conn, "PRAGMA query_only=ON", &.{});
         }
-        return .{ .allocator = allocator, .writer = writer, .readers = pool };
+        return .{ .allocator = allocator, .io = io, .writer = writer, .readers = pool };
     }
 
     /// Application must finish all requests before closing.
     pub fn deinit(self: *Database) void {
+        self.io.blocking(deinitIn,.{self});
+    }
+    fn deinitIn(self: *Database) void {
         for (self.readers) |r| _ = c.sqlite3_close(r.conn);
         _ = c.sqlite3_close(self.writer);
         self.allocator.free(self.readers);
@@ -77,7 +86,6 @@ pub const Database = struct {
             for (self.readers, 0..) |*r, i| {
                 if (!r.busy) {
                     r.busy = true;
-                    exec(r.conn, "BEGIN", &.{}) catch |err| { r.busy = false; self.available.signal(io); return err; };
                     return i;
                 }
             }
@@ -86,8 +94,6 @@ pub const Database = struct {
     }
 
     fn release(self: *Database, io: Io, i: usize) void {
-        // ROLLBACK also ends successful read-only snapshots without a fallible cleanup.
-        _ = c.sqlite3_exec(self.readers[i].conn, "ROLLBACK", null, null, null);
         self.pool_mutex.lockUncancelable(io);
         defer self.pool_mutex.unlock(io);
         self.readers[i].busy = false;
@@ -96,26 +102,29 @@ pub const Database = struct {
 
     pub fn account(self: *Database, allocator: Allocator, io: Io) !model.Account {
         const i = try self.acquire(io); defer self.release(io, i);
-        return accountIn(allocator, self.readers[i].conn);
+        return readCall(io,self.readers[i].conn,accountIn,.{allocator,self.readers[i].conn});
     }
 
     pub fn findSession(self: *Database, allocator: Allocator, io: Io, token: []const u8) !?model.AuthSession {
         const i = try self.acquire(io); defer self.release(io, i);
-        return sessionIn(allocator, self.readers[i].conn, token);
+        return readCall(io,self.readers[i].conn,sessionIn,.{allocator,self.readers[i].conn,token});
     }
 
     pub fn findUserByEmail(self: *Database, allocator: Allocator, io: Io, email: []const u8) !?model.User {
         const i = try self.acquire(io); defer self.release(io, i);
-        return userWhere(allocator, self.readers[i].conn, "u.email_address=?", &.{text(email)});
+        return readCall(io,self.readers[i].conn,userByEmailIn,.{allocator,self.readers[i].conn,email});
     }
 
     pub fn findUser(self: *Database, allocator: Allocator, io: Io, id: i64) !?model.User {
         const i = try self.acquire(io); defer self.release(io, i);
-        return userIn(allocator, self.readers[i].conn, id);
+        return readCall(io,self.readers[i].conn,userIn,.{allocator,self.readers[i].conn,id});
     }
 
     pub fn createSession(self: *Database, allocator: Allocator, io: Io, user_id: i64, token: []const u8, remote_ip: ?[]const u8, user_agent: ?[]const u8, now: []const u8) !model.AuthSession {
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(createSessionIn,.{self,allocator,user_id,token,remote_ip,user_agent,now});
+    }
+    fn createSessionIn(self: *Database, allocator: Allocator, user_id: i64, token: []const u8, remote_ip: ?[]const u8, user_agent: ?[]const u8, now: []const u8) !model.AuthSession {
         try exec(self.writer, "BEGIN IMMEDIATE", &.{}); errdefer rollback(self.writer);
         try active(self.writer, user_id);
         try exec(self.writer, "INSERT INTO sessions(user_id,token,ip_address,user_agent,created_at,updated_at,last_active_at) VALUES(?,?,?,?,?,?,?)", &.{int(user_id),text(token),optional(remote_ip),optional(user_agent),text(now),text(now),text(now)});
@@ -126,6 +135,9 @@ pub const Database = struct {
 
     pub fn deleteSession(self: *Database, io: Io, token: []const u8) !void {
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(deleteSessionIn,.{self,token});
+    }
+    fn deleteSessionIn(self: *Database, token: []const u8) !void {
         try exec(self.writer, "BEGIN IMMEDIATE", &.{}); errdefer rollback(self.writer);
         try exec(self.writer, "DELETE FROM sessions WHERE token=?", &.{text(token)});
         try exec(self.writer, "COMMIT", &.{});
@@ -133,6 +145,9 @@ pub const Database = struct {
 
     pub fn refreshSession(self: *Database, io: Io, id: i64, remote_ip: ?[]const u8, user_agent: ?[]const u8, now: []const u8) !void {
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(refreshSessionIn,.{self,id,remote_ip,user_agent,now});
+    }
+    fn refreshSessionIn(self: *Database, id: i64, remote_ip: ?[]const u8, user_agent: ?[]const u8, now: []const u8) !void {
         try exec(self.writer, "BEGIN IMMEDIATE", &.{}); errdefer rollback(self.writer);
         var s = try Statement.init(self.writer, "SELECT last_active_at FROM sessions WHERE id=?", &.{int(id)}); defer s.deinit();
         if (!try s.next()) return error.NotFound;
@@ -144,17 +159,19 @@ pub const Database = struct {
 
     pub fn visitedRoom(self: *Database, allocator: Allocator, io: Io, user_id: i64, last_room: ?i64) !?model.Room {
         const i = try self.acquire(io); defer self.release(io, i);
-        return visitedRoomIn(allocator,self.readers[i].conn,user_id,last_room);
+        return readCall(io,self.readers[i].conn,visitedRoomIn,.{allocator,self.readers[i].conn,user_id,last_room});
     }
 
     pub fn banned(self: *Database, io: Io, remote_ip: []const u8) !bool {
         const i = try self.acquire(io); defer self.release(io, i);
-        return exists(self.readers[i].conn, "SELECT 1 FROM bans WHERE ip_address=? LIMIT 1", &.{text(remote_ip)});
+        return readCall(io,self.readers[i].conn,exists,.{self.readers[i].conn,"SELECT 1 FROM bans WHERE ip_address=? LIMIT 1",&.{text(remote_ip)}});
     }
 
     pub fn roomPage(self: *Database, allocator: Allocator, io: Io, user_id: i64, room_id: i64, around_message: ?i64) !model.RoomPage {
         const i = try self.acquire(io); defer self.release(io, i);
-        const conn = self.readers[i].conn;
+        return readCall(io,self.readers[i].conn,roomPageIn,.{allocator,self.readers[i].conn,user_id,room_id,around_message});
+    }
+    fn roomPageIn(allocator: Allocator, conn: Conn, user_id: i64, room_id: i64, around_message: ?i64) !model.RoomPage {
         try access(conn, user_id, room_id);
         const user = (try userIn(allocator, conn, user_id)) orelse return error.Unauthorized;
         const room = (try roomWhere(allocator, conn, user_id, "WHERE r.id=?", &.{int(room_id)})) orelse return error.NotFound;
@@ -176,7 +193,9 @@ pub const Database = struct {
 
     pub fn messagePage(self: *Database, allocator: Allocator, io: Io, user_id: i64, room_id: i64, before: ?i64, after: ?i64) ![]model.Message {
         const i = try self.acquire(io); defer self.release(io, i);
-        const conn = self.readers[i].conn;
+        return readCall(io,self.readers[i].conn,messagePageIn,.{allocator,self.readers[i].conn,user_id,room_id,before,after});
+    }
+    fn messagePageIn(allocator: Allocator, conn: Conn, user_id: i64, room_id: i64, before: ?i64, after: ?i64) ![]model.Message {
         try access(conn, user_id, room_id);
         if (before orelse after) |anchor| {
             const at = (try anchorTime(allocator, conn, room_id, anchor)) orelse return error.NotFound;
@@ -187,15 +206,17 @@ pub const Database = struct {
 
     pub fn sidebar(self: *Database, allocator: Allocator, io: Io, user_id: i64) !model.Sidebar {
         const i = try self.acquire(io); defer self.release(io, i);
-        const conn = self.readers[i].conn;
+        return readCall(io,self.readers[i].conn,sidebarIn,.{allocator,self.readers[i].conn,user_id});
+    }
+    fn sidebarIn(allocator: Allocator, conn: Conn, user_id: i64) !model.Sidebar {
         try active(conn, user_id);
         const user = (try userIn(allocator, conn, user_id)) orelse return error.Unauthorized;
-        var s = try Statement.init(conn, "SELECT " ++ room_columns ++ ",p.involvement,p.unread_at FROM memberships p JOIN rooms r ON r.id=p.room_id WHERE p.user_id=? AND p.involvement!='invisible' ORDER BY LOWER(r.name)", &.{int(user_id)}); defer s.deinit();
+        var s = try Statement.init(conn, "SELECT " ++ room_columns ++ ",p.involvement,p.unread_at,p.updated_at FROM memberships p JOIN rooms r ON r.id=p.room_id WHERE p.user_id=? AND p.involvement!='invisible' ORDER BY LOWER(r.name)", &.{int(user_id)}); defer s.deinit();
         var shared: std.ArrayList(model.SidebarRoom) = .empty;
         var directs: std.ArrayList(model.SidebarRoom) = .empty;
         while (try s.next()) {
             const room = try readRoom(allocator, conn, &s, 0, user_id);
-            var item: model.SidebarRoom = .{ .room = room, .involvement = try s.string(allocator, 6), .unread_at = try s.nullable(allocator, 7) };
+            var item: model.SidebarRoom = .{ .room = room, .involvement = try s.string(allocator, 6), .unread_at = try s.nullable(allocator, 7), .membership_updated_at = try s.string(allocator,8) };
             if (room.kind == .direct) {
                 var members = try usersInRoom(allocator, conn, room.id, user_id);
                 if (members.len == 0) members = try allocator.dupe(model.User, &.{user});
@@ -212,7 +233,9 @@ pub const Database = struct {
 
     pub fn search(self: *Database, allocator: Allocator, io: Io, user_id: i64, q: ?[]const u8, return_room_id: ?i64) !model.SearchPage {
         const i = try self.acquire(io); defer self.release(io, i);
-        const conn = self.readers[i].conn;
+        return readCall(io,self.readers[i].conn,searchIn,.{allocator,self.readers[i].conn,user_id,q,return_room_id});
+    }
+    fn searchIn(allocator: Allocator, conn: Conn, user_id: i64, q: ?[]const u8, return_room_id: ?i64) !model.SearchPage {
         try active(conn, user_id);
         const sanitized = if (q) |raw| try sanitizeQuery(allocator, raw) else null;
         const query: ?[]const u8 = if (sanitized) |v| (if (blank(v)) null else v) else null;
@@ -238,6 +261,9 @@ pub const Database = struct {
         // SearchesController executes set_messages before recording even an empty query.
         _ = try self.search(allocator, io, user_id, q, null);
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(recordSearchIn,.{self,user_id,query,now});
+    }
+    fn recordSearchIn(self: *Database, user_id: i64, query: []const u8, now: []const u8) !void {
         try exec(self.writer, "BEGIN IMMEDIATE", &.{}); errdefer rollback(self.writer);
         try active(self.writer, user_id);
         var s = try Statement.init(self.writer, "SELECT id FROM searches WHERE user_id=? AND query=? LIMIT 1", &.{int(user_id),text(query)}); defer s.deinit();
@@ -252,31 +278,37 @@ pub const Database = struct {
 
     pub fn clearSearch(self: *Database, io: Io, user_id: i64) !void {
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(clearSearchIn,.{self,user_id});
+    }
+    fn clearSearchIn(self: *Database, user_id: i64) !void {
         try exec(self.writer, "BEGIN IMMEDIATE", &.{}); errdefer rollback(self.writer);
         try active(self.writer, user_id);
         try exec(self.writer, "DELETE FROM searches WHERE user_id=?", &.{int(user_id)});
         try exec(self.writer, "COMMIT", &.{});
     }
 
-    pub fn createMessage(self: *Database, allocator: Allocator, io: Io, user_id: i64, room_id: i64, body: []const u8, client_message_id: ?[]const u8, now: []const u8) !model.Message {
+    pub fn createMessage(self: *Database, allocator: Allocator, io: Io, user_id: i64, room_id: i64, body: ?[]const u8, client_message_id: ?[]const u8, now: []const u8) !model.Message {
+        const client_id=client_message_id orelse try uuid(allocator,io);
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(createMessageIn,.{self,allocator,user_id,room_id,body,client_id,now});
+    }
+    fn createMessageIn(self: *Database, allocator: Allocator, user_id: i64, room_id: i64, body: ?[]const u8, client_id: []const u8, now: []const u8) !model.Message {
         const conn = self.writer;
         try exec(conn, "BEGIN IMMEDIATE", &.{}); errdefer rollback(conn);
         try access(conn, user_id, room_id);
         // Rails accepts empty bodies; do not invent a nonempty validation.
-        const client_id = if (client_message_id) |id| id else try uuid(allocator, io);
         try exec(conn, "INSERT INTO messages(client_message_id,creator_id,room_id,created_at,updated_at) VALUES(?,?,?,?,?)", &.{text(client_id),int(user_id),int(room_id),text(now),text(now)});
         const id = c.sqlite3_last_insert_rowid(conn);
-        try exec(conn, "INSERT INTO action_text_rich_texts(record_type,record_id,name,body,created_at,updated_at) VALUES('Message',?,'body',?,?,?)", &.{int(id),text(body),text(now),text(now)});
+        if (body) |html| try exec(conn, "INSERT INTO action_text_rich_texts(record_type,record_id,name,body,created_at,updated_at) VALUES('Message',?,'body',?,?,?)", &.{int(id),text(html),text(now),text(now)});
         try exec(conn, "UPDATE rooms SET updated_at=? WHERE id=?", &.{text(now),int(room_id)});
         const created = try messageWhere(allocator, conn, "WHERE m.id=?", &.{int(id)}, false);
         if (created.len != 1) return error.DatabaseCorrupt;
         try exec(conn, "COMMIT", &.{});
         // Source after_create_commit callbacks intentionally follow commit, in this order.
-        const indexed = richtext.plainTextWithUsers(allocator, body, .{ .context = conn, .find = resolveUser }) catch |err| switch(err) {
+        const indexed = if (body) |html| richtext.plainTextWithUsers(allocator, html, .{ .context = conn, .find = resolveUser }) catch |err| switch(err) {
             error.OutOfMemory => return err,
             else => return error.InvalidMessage,
-        };
+        } else "";
         try exec(conn, "INSERT INTO message_search_index(rowid,body) VALUES(?,?)", &.{int(id),text(indexed)});
         try exec(conn, "UPDATE memberships SET unread_at=?,updated_at=? WHERE room_id=? AND involvement!='invisible' AND (connected_at IS NULL OR connected_at<?) AND user_id!=?", &.{text(now),text(now),int(room_id),text(try cutoff(allocator, now)),int(user_id)});
         return created[0];
@@ -284,23 +316,25 @@ pub const Database = struct {
 
     pub fn avatar(self: *Database, allocator: Allocator, io: Io, user_id: i64) !?model.Blob {
         const i = try self.acquire(io); defer self.release(io, i);
-        return attachedBlob(allocator, self.readers[i].conn, "User", user_id, "avatar");
+        return readCall(io,self.readers[i].conn,attachedBlob,.{allocator,self.readers[i].conn,"User",user_id,"avatar"});
     }
 
     pub fn blob(self: *Database, allocator: Allocator, io: Io, id: i64) !?model.Blob {
         const i = try self.acquire(io); defer self.release(io, i);
-        return blobIn(allocator, self.readers[i].conn, id);
+        return readCall(io,self.readers[i].conn,blobIn,.{allocator,self.readers[i].conn,id});
     }
 
     pub fn existingVariant(self: *Database, allocator: Allocator, io: Io, blob_id: i64, digest: []const u8) !?model.Blob {
         const i=try self.acquire(io); defer self.release(io,i);
-        const conn=self.readers[i].conn;
+        return readCall(io,self.readers[i].conn,existingVariantIn,.{allocator,self.readers[i].conn,blob_id,digest});
+    }
+    fn existingVariantIn(allocator: Allocator, conn: Conn, blob_id: i64, digest: []const u8) !?model.Blob {
         const id=(try variantRecord(conn,blob_id,digest)) orelse return null;
         return attachedBlob(allocator,conn,"ActiveStorage::VariantRecord",id,"image");
     }
     pub fn existingPreview(self: *Database, allocator: Allocator, io: Io, blob_id: i64) !?model.Blob {
         const i=try self.acquire(io); defer self.release(io,i);
-        return attachedBlob(allocator,self.readers[i].conn,"ActiveStorage::Blob",blob_id,"preview_image");
+        return readCall(io,self.readers[i].conn,attachedBlob,.{allocator,self.readers[i].conn,"ActiveStorage::Blob",blob_id,"preview_image"});
     }
     pub fn recordVariant(self: *Database, allocator: Allocator, io: Io, blob_id: i64, digest: []const u8, image: NewBlob, now: []const u8) !model.Blob {
         return self.recordImage(allocator,io,blob_id,digest,image,now);
@@ -310,6 +344,9 @@ pub const Database = struct {
     }
     fn recordImage(self: *Database, allocator: Allocator, io: Io, blob_id: i64, digest: ?[]const u8, image: NewBlob, now: []const u8) !model.Blob {
         try self.writer_mutex.lock(io); defer self.writer_mutex.unlock(io);
+        return io.blocking(recordImageIn,.{self,allocator,blob_id,digest,image,now});
+    }
+    fn recordImageIn(self: *Database, allocator: Allocator, blob_id: i64, digest: ?[]const u8, image: NewBlob, now: []const u8) !model.Blob {
         const conn=self.writer;
         try exec(conn,"BEGIN IMMEDIATE",&.{}); errdefer rollback(conn);
         if (!try exists(conn,"SELECT 1 FROM active_storage_blobs WHERE id=?",&.{int(blob_id)})) return error.NotFound;
@@ -336,6 +373,24 @@ pub const Database = struct {
         return recorded;
     }
 };
+
+/// The pool lease and fiber locks stay on the task; snapshot and SQLite work share one
+/// blocking dispatch, including cleanup, so WAL/FS/busy waits cannot occupy Threadz workers.
+fn readCall(io: Io, conn: Conn, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) @typeInfo(@TypeOf(function)).@"fn".return_type.? {
+    const Args=std.meta.ArgsTuple(@TypeOf(function));
+    const Result=@typeInfo(@TypeOf(function)).@"fn".return_type.?;
+    return io.blocking(struct {
+        fn run(db: Conn, params: Args) Result {
+            try exec(db,"BEGIN",&.{});
+            defer rollback(db);
+            return @call(.auto,function,params);
+        }
+    }.run,.{conn,args});
+}
+
+fn userByEmailIn(allocator: Allocator, conn: Conn, email: []const u8) !?model.User {
+    return userWhere(allocator,conn,"u.email_address=?",&.{text(email)});
+}
 
 fn failure(conn: Conn, code: c_int) Error {
     std.log.err("SQLite ({d}): {s}", .{code, std.mem.span(c.sqlite3_errmsg(conn))});
@@ -408,14 +463,13 @@ fn open(path: [:0]const u8) !Conn {
     for ([_][:0]const u8{ "PRAGMA foreign_keys=ON", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA journal_size_limit=67108864", "PRAGMA cache_size=2000" }) |sql| try exec(db,sql,&.{});
     return db;
 }
-fn prepareSchema(allocator: Allocator, io: Io, conn: Conn) !void {
+fn prepareSchema(conn: Conn, now: []const u8) !void {
     if (!try exists(conn,"SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",&.{})) {
         try exec(conn,"BEGIN IMMEDIATE",&.{}); errdefer rollback(conn);
         const code=c.sqlite3_exec(conn,schema.sql.ptr,null,null,null);
         if (code != c.SQLITE_OK) return failure(conn,code);
         var n=migrations.len;
         while (n>0) { n-=1; try exec(conn,"INSERT INTO schema_migrations(version) VALUES(?)",&.{text(migrations[n])}); }
-        const now=try compat.nowText(allocator,io); defer allocator.free(now);
         try exec(conn,"INSERT INTO ar_internal_metadata(key,value,created_at,updated_at) VALUES('environment','production',?,?),('schema_sha1','f75da8dad38bfb179ffd757bd7a7c2b3f818bc29',?,?)",&.{text(now),text(now),text(now),text(now)});
         try exec(conn,"COMMIT",&.{});
     } else {
@@ -956,4 +1010,29 @@ test "storage associations persist winner without orphan staged metadata across 
     try std.testing.expect((try variantRecord(t.db.writer,1,"rollback"))==null);
     try exec(t.db.writer,"INSERT INTO active_storage_variant_records(blob_id,variation_digest) VALUES(1,'dangling')",&.{});
     try std.testing.expectError(error.NotFound,t.db.recordVariant(a,io,1,"dangling",other,"2026-01-10 12:00:00"));
+}
+
+test "absent message body stays absent while explicitly empty body creates richtext" {
+    var t=try TestDatabase.init(); defer t.deinit();
+    var arena=std.heap.ArenaAllocator.init(std.testing.allocator); defer arena.deinit();
+    const a=arena.allocator(); const io=std.testing.io;
+    const absent=try t.db.createMessage(a,io,1,1,null,"absent","2026-01-10 12:00:00");
+    try std.testing.expectEqualStrings("",absent.body);
+    try std.testing.expect(!try exists(t.db.writer,"SELECT 1 FROM action_text_rich_texts WHERE record_type='Message' AND record_id=? AND name='body'",&.{int(absent.id)}));
+    try std.testing.expect(try exists(t.db.writer,"SELECT 1 FROM message_search_index WHERE rowid=? AND body=''",&.{int(absent.id)}));
+    const explicit=try t.db.createMessage(a,io,1,1,"","explicit","2026-01-10 12:01:00");
+    try std.testing.expect(try exists(t.db.writer,"SELECT 1 FROM action_text_rich_texts WHERE record_type='Message' AND record_id=? AND name='body' AND body=''",&.{int(explicit.id)}));
+    try std.testing.expectEqual(@as(c_int,1),c.sqlite3_get_autocommit(t.db.writer));
+}
+
+test "sidebar carries membership timestamp independently of room activity order" {
+    var t=try TestDatabase.init(); defer t.deinit();
+    var arena=std.heap.ArenaAllocator.init(std.testing.allocator); defer arena.deinit();
+    const a=arena.allocator(); const io=std.testing.io;
+    try exec(t.db.writer,"UPDATE memberships SET updated_at='2026-02-01 01:02:03.123456' WHERE room_id=3 AND user_id=1",&.{});
+    const page=try t.db.sidebar(a,io,1);
+    try std.testing.expectEqual(@as(i64,4),page.directs[0].room.id);
+    try std.testing.expectEqual(@as(i64,3),page.directs[1].room.id);
+    try std.testing.expectEqualStrings("2026-02-01 01:02:03.123456",page.directs[1].membership_updated_at);
+    try std.testing.expectEqualStrings("2026-01-03 00:00:00",page.directs[1].room.updated_at);
 }
