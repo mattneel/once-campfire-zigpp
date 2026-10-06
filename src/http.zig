@@ -25,6 +25,8 @@ pub const App = struct {
     storage: storage_module.Storage,
     force_ssl: bool,
     app_version: []const u8,
+    git_revision: ?[]const u8,
+    preload_link: []const u8,
     vapid_public_key: ?[]const u8,
     rate_mutex: Io.Mutex = .init,
     rate_limits: std.StringArrayHashMapUnmanaged(Rate) = .empty,
@@ -62,10 +64,12 @@ const Reply = struct {
     status: u16 = 200,
     content_type: []const u8 = "text/html; charset=utf-8",
     body: []const u8 = "",
-    cache_control: ?[]const u8 = "max-age=0, private, must-revalidate",
+    cache_control: ?[]const u8 = null,
     etag: ?[]const u8 = null,
     last_modified: ?i64 = null,
     conditional: bool = true,
+    page: bool = false,
+    negotiated: bool = false,
     content_length: ?usize = null,
     headers: []const storage_module.Header = &.{},
 };
@@ -110,11 +114,7 @@ const Request = struct {
     fn redirect(self: *Request, path: []const u8) !Reply {
         const url = if (std.mem.startsWith(u8, path, "http://") or std.mem.startsWith(u8, path, "https://")) path else try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.base_url, path });
         try self.response.addHeader("Location", url);
-        var out = Io.Writer.Allocating.init(self.allocator);
-        try out.writer.writeAll("<html><body>You are being <a href=\"");
-        try compatibility.htmlEscape(&out.writer, url);
-        try out.writer.writeAll("\">redirected</a>.</body></html>");
-        return .{ .status = 302, .body = try out.toOwnedSlice(), .conditional = false };
+        return .{ .status = 302, .conditional = false };
     }
 
     fn cookie(self: *Request, name: []const u8, value: []const u8, http_only: bool, expires: ?i64) !void {
@@ -135,7 +135,7 @@ const Request = struct {
                 if (value == .object) return value.object;
             }
         }
-        return std.json.ObjectMap.init(self.allocator);
+        return .empty;
     }
 
     fn saveState(self: *Request, state: *std.json.ObjectMap) !void {
@@ -143,7 +143,7 @@ const Request = struct {
         if (!state.contains("session_id")) {
             var bytes: [16]u8 = undefined;
             try self.io.randomSecure(&bytes);
-            try state.put("session_id", .{ .string = try std.fmt.allocPrint(self.allocator, "{x}", .{&bytes}) });
+            try state.put(self.allocator, "session_id", .{ .string = try std.fmt.allocPrint(self.allocator, "{x}", .{&bytes}) });
         }
         const expires = try compatibility.permanentExpires(self.now_unix);
         const wire = try self.app.secrets.encryptCookie(self.allocator, self.io, "_campfire_session", .{ .object = state.* }, expires);
@@ -158,7 +158,7 @@ const Request = struct {
             .app_version = self.app.app_version,
             .vapid_public_key = self.app.vapid_public_key,
             .email_address = self.parameters.str("email_address"),
-        }) };
+        }), .page = true, .negotiated = true };
     }
 };
 
@@ -204,7 +204,7 @@ fn dispatch(r: *Request) !Reply {
     if (!session_new and !session_create and !public_logo and r.auth == null) {
         var state = try r.sessionState();
         const fullpath = if (r.raw.query().len == 0) r.path else try std.fmt.allocPrint(r.allocator, "{s}?{s}", .{ r.path, r.raw.query() });
-        try state.put("return_to_after_authenticating", .{ .string = try std.fmt.allocPrint(r.allocator, "{s}{s}", .{ r.base_url, fullpath }) });
+        try state.put(r.allocator, "return_to_after_authenticating", .{ .string = try std.fmt.allocPrint(r.allocator, "{s}{s}", .{ r.base_url, fullpath }) });
         try r.saveState(&state);
         return r.redirect("/session/new");
     }
@@ -279,13 +279,13 @@ fn dispatch(r: *Request) !Reply {
         const room = try r.app.db.visitedRoom(r.allocator, r.io, user.id, lastRoom(r));
         if (room) |found| return r.redirect(try std.fmt.allocPrint(r.allocator, "/rooms/{d}", .{found.id}));
         var context = r.viewContext();
-        return .{ .body = try views.welcome(&context) };
+        return .{ .body = try views.welcome(&context), .page = true, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/users/me/sidebar") and r.get()) {
         if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
         const page = try r.app.db.sidebar(r.allocator, r.io, user.id);
         var context = r.viewContext();
-        return .{ .body = try views.sidebar(&context, page) };
+        return .{ .body = try views.sidebar(&context, page), .page = true, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/searches") or std.mem.eql(u8, r.path, "/searches/clear")) {
         const q = if (r.parameters.get("q")) |value| switch (value) {
@@ -297,7 +297,7 @@ fn dispatch(r: *Request) !Reply {
         if (std.mem.eql(u8, r.path, "/searches") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
             var context = r.viewContext();
-            return .{ .body = try views.search(&context, page) };
+            return .{ .body = try views.search(&context, page), .page = true, .negotiated = true };
         }
         if (std.mem.eql(u8, r.path, "/searches") and std.mem.eql(u8, r.method, "POST")) {
             const recorded = q orelse return error.InvalidSearchQuery;
@@ -321,7 +321,7 @@ fn dispatch(r: *Request) !Reply {
             const asset = r.app.assets.lookup(path) orelse return error.NotFound;
             return .{ .body = asset.body, .content_type = asset.content_type, .cache_control = "public, max-age=1800, stale-while-revalidate=604800" };
         }
-        return .{ .body = try views.avatarSvg(r.allocator, avatar_user), .content_type = "image/svg+xml; charset=utf-8", .cache_control = "public, max-age=1800, stale-while-revalidate=604800" };
+        return .{ .body = try views.avatarSvg(r.allocator, avatar_user), .content_type = "image/svg+xml; charset=utf-8", .cache_control = "public, max-age=1800, stale-while-revalidate=604800", .negotiated = true };
     }
     if (std.mem.startsWith(u8, r.path, "/rooms/")) {
         const tail = r.path[7..];
@@ -339,7 +339,7 @@ fn dispatch(r: *Request) !Reply {
             const room_text = try std.fmt.allocPrint(r.allocator, "{d}", .{room_id});
             if (existing == null or !std.mem.eql(u8, existing.?, room_text)) try r.cookie("last_room", room_text, false, try compatibility.permanentExpires(r.now_unix));
             var context = r.viewContext();
-            return .{ .body = try views.room(&context, page) };
+            return .{ .body = try views.room(&context, page), .page = true, .negotiated = true };
         }
         if (std.mem.eql(u8, action, "/messages") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
@@ -350,7 +350,7 @@ fn dispatch(r: *Request) !Reply {
             var context = r.viewContext();
             var modified: i64 = 0;
             for (messages) |message| modified = @max(modified, try compatibility.unixSeconds(message.updated_at));
-            return .{ .body = try views.messages(&context, messages), .last_modified = modified };
+            return .{ .body = try views.messages(&context, messages), .last_modified = modified, .negotiated = true };
         }
         if (std.mem.eql(u8, action, "/messages") and std.mem.eql(u8, r.method, "POST")) {
             if (!accepts(r.raw, "text/vnd.turbo-stream.html")) return error.NotAcceptable;
@@ -367,12 +367,12 @@ fn dispatch(r: *Request) !Reply {
             const created = r.app.db.createMessage(r.allocator, r.io, user.id, room_id, canonical, client_id, r.now) catch |err| {
                 if (err == error.NotFound) {
                     var context = r.viewContext();
-                    return .{ .body = try views.roomNotFound(&context), .conditional = false };
+                    return .{ .body = try views.roomNotFound(&context), .page = true, .negotiated = true };
                 }
                 return err;
             };
             var context = r.viewContext();
-            return .{ .body = try views.created(&context, created), .content_type = "text/vnd.turbo-stream.html; charset=utf-8", .conditional = false };
+            return .{ .body = try views.created(&context, created), .content_type = "text/vnd.turbo-stream.html; charset=utf-8", .negotiated = true };
         }
     }
     if (std.mem.eql(u8, r.path, "/cable")) return .{ .status = 501, .content_type = "text/plain; charset=utf-8", .body = "Cable is outside the native leaderboard target.", .conditional = false };
@@ -389,12 +389,12 @@ fn storedReply(stored: storage_module.Result) Reply {
 
 fn roomNotFound(r: *Request) !Reply {
     var state = try r.sessionState();
-    var flashes = std.json.ObjectMap.init(r.allocator);
-    try flashes.put("alert", .{ .string = "Room not found or inaccessible" });
-    var flash = std.json.ObjectMap.init(r.allocator);
-    try flash.put("discard", .{ .array = std.array_list.Managed(std.json.Value).init(r.allocator) });
-    try flash.put("flashes", .{ .object = flashes });
-    try state.put("flash", .{ .object = flash });
+    var flashes: std.json.ObjectMap = .empty;
+    try flashes.put(r.allocator, "alert", .{ .string = "Room not found or inaccessible" });
+    var flash: std.json.ObjectMap = .empty;
+    try flash.put(r.allocator, "discard", .{ .array = std.json.Array.init(r.allocator) });
+    try flash.put(r.allocator, "flashes", .{ .object = flashes });
+    try state.put(r.allocator, "flash", .{ .object = flash });
     try r.saveState(&state);
     return r.redirect("/");
 }
@@ -449,14 +449,24 @@ fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]c
     try header.writer.print("HTTP/1.1 {d} {s}\r\n", .{ reply.status, reason(reply.status) });
     if (reply.status != 204 and reply.status != 304) {
         try header.writer.print("Content-Type: {s}\r\n", .{reply.content_type});
-        try header.writer.print("Content-Length: {d}\r\n", .{reply.content_length orelse entity.len});
+        try header.writer.print("Content-Length: {d}\r\n", .{if (encoding != null) entity.len else reply.content_length orelse entity.len});
     }
     try header.writer.print("Date: {s}\r\n", .{try httpDate(r.allocator, r.now_unix)});
-    try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
-    if (reply.cache_control) |cache| try header.writer.print("Cache-Control: {s}\r\n", .{cache});
+    try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nX-XSS-Protection: 0\r\nX-Permitted-Cross-Domain-Policies: none\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
+    try header.writer.print("X-Version: {s}\r\n", .{r.app.app_version});
+    if (r.app.git_revision) |revision| try header.writer.print("X-Rev: {s}\r\n", .{revision});
+    if (reply.page and r.app.preload_link.len != 0) try header.writer.print("Link: {s}\r\n", .{r.app.preload_link});
+    if (reply.cache_control) |cache| {
+        try header.writer.print("Cache-Control: {s}\r\n", .{cache});
+    } else if (!hasHeader(reply.headers, "cache-control")) {
+        try header.writer.print("Cache-Control: {s}\r\n", .{if (tag != null or reply.last_modified != null) "max-age=0, private, must-revalidate" else "no-cache"});
+    }
     if (tag) |etag| try header.writer.print("ETag: {s}\r\n", .{etag});
     if (reply.last_modified) |at| try header.writer.print("Last-Modified: {s}\r\n", .{try httpDate(r.allocator, at)});
-    if (encoding) |coding| try header.writer.print("Content-Encoding: {s}\r\nVary: Accept-Encoding\r\n", .{coding});
+    if (encoding) |coding| try header.writer.print("Content-Encoding: {s}\r\n", .{coding});
+    const vary_accept = reply.negotiated and r.parameters.get("format") == null and validAccept(r.raw);
+    const vary_encoding = compression.shouldCompress(reply.body.len, reply.content_type, 256);
+    if (vary_accept or vary_encoding) try header.writer.print("Vary: {s}\r\n", .{if (vary_accept and vary_encoding) "Accept,Accept-Encoding" else if (vary_accept) "Accept" else "Accept-Encoding"});
     if (r.response.extra_buf) |headers| for (headers[0..r.response.extra_len]) |h| try header.writer.print("{s}: {s}\r\n", .{ h.name, h.value });
     for (reply.headers) |h| {
         if (std.ascii.eqlIgnoreCase(h.name, "content-length") or std.ascii.eqlIgnoreCase(h.name, "content-type")) continue;
@@ -693,6 +703,27 @@ fn etagMatches(header: []const u8, tag: []const u8) bool {
         if (std.mem.eql(u8, candidate, expected)) return true;
     }
     return false;
+}
+
+fn hasHeader(headers: []const storage_module.Header, name: []const u8) bool {
+    for (headers) |header| if (std.ascii.eqlIgnoreCase(header.name, name)) return true;
+    return false;
+}
+
+fn validAccept(raw: *Http.Request) bool {
+    const accept = raw.header("accept") orelse "";
+    const present = std.mem.trim(u8, accept, " \t\r\n").len != 0;
+    if (std.ascii.eqlIgnoreCase(raw.header("x-requested-with") orelse "", "XMLHttpRequest") and (present or (raw.header("content-type") orelse "").len != 0)) return true;
+    if (!present) return false;
+    var parts = std.mem.splitScalar(u8, accept, ',');
+    var first = true;
+    while (parts.next()) |part| {
+        const trimmed = std.mem.trim(u8, part, " \t\r\n");
+        if (!first and std.mem.startsWith(u8, trimmed, "*/*")) return false;
+        if (std.mem.eql(u8, trimmed, "*/*") and parts.index != null) return false;
+        first = false;
+    }
+    return true;
 }
 
 test "header-only CSRF rejects hostile origins and secure requests missing Fetch Metadata" {

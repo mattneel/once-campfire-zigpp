@@ -59,11 +59,14 @@ pub fn main(init: std.process.Init) !void {
     defer app.secrets.deinit();
     app.assets = try assets.Assets.init(init.gpa, io, asset_root);
     defer app.assets.deinit();
+    app.preload_link = try preloadHeader(init.gpa, &app.assets);
+    defer init.gpa.free(app.preload_link);
     app.storage = try storage.Storage.init(init.gpa, io, files_path, &app.db, &app.secrets);
     defer app.storage.deinit();
     app.allocator = init.gpa;
     app.force_ssl = env.get("DISABLE_SSL") == null;
     app.app_version = env.get("APP_VERSION") orelse "native Zig++";
+    app.git_revision = env.get("GIT_REVISION");
     app.vapid_public_key = env.get("VAPID_PUBLIC_KEY");
     app.rate_mutex = .init;
     app.rate_limits = .empty;
@@ -79,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
         .workers = workers,
         .max_response_headers = .COMMON,
         // Http1 retains bodies only while they fit this buffer; never truncate a valid form.
-        .max_recv_buf = 16 * 1024 * 1024,
+        .max_recv_buf = 16 * 1024 * 1024 + 64 * 1024,
         .max_request_body = 16 * 1024 * 1024,
         .busy_poll_us = 0,
         // Whole-response path keys lack user identity. Never cache authenticated responses there.
@@ -87,4 +90,18 @@ pub fn main(init: std.process.Init) !void {
         .compress = true,
     });
     try server.run();
+}
+
+fn preloadHeader(allocator: std.mem.Allocator, catalog: *const assets.Assets) ![]const u8 {
+    var out = std.Io.Writer.Allocating.init(allocator);
+    errdefer out.deinit();
+    const suffix = ">; rel=preload; as=style; nopush";
+    for (catalog.stylesheets()) |logical| {
+        const path = catalog.assetPath(logical) orelse continue;
+        // Rails checks before adding the separating comma; later shorter links can still fit.
+        if (out.written().len + 1 + path.len + suffix.len > 1000) continue;
+        if (out.written().len != 0) try out.writer.writeByte(',');
+        try out.writer.print("<{s}{s}", .{ path, suffix });
+    }
+    return out.toOwnedSlice();
 }
