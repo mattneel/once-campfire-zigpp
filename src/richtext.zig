@@ -214,6 +214,28 @@ pub fn canonicalize(allocator: Allocator, body: []const u8) ![]const u8 {
     for (children(parsed.root())) |raw| try canonicalNode(allocator, child(raw), &out.writer, false);
     return out.toOwnedSlice();
 }
+/// Storage uses Nokogiri HTML5 serialization (crates/richtext/src/dom.rs::escape_attribute):
+/// Gumbo has already decoded entities; escape &, NBSP and " once, but preserve <, > and '.
+/// This is not presentation escaping: rendered attributes still go through writeAttribute.
+fn canonicalAttribute(writer: *Writer, value: []const u8) !void {
+    var start: usize = 0;
+    var index: usize = 0;
+    while (index < value.len) : (index += 1) {
+        const replacement: ?[]const u8 = switch (value[index]) {
+            '&' => "&amp;",
+            '"' => "&quot;",
+            0xc2 => if (index + 1 < value.len and value[index + 1] == 0xa0) "&nbsp;" else null,
+            else => null,
+        };
+        if (replacement) |s| {
+            try writer.writeAll(value[start..index]);
+            try writer.writeAll(s);
+            if (value[index] == 0xc2) index += 1;
+            start = index + 1;
+        }
+    }
+    try writer.writeAll(value[start..]);
+}
 fn canonicalNode(allocator: Allocator, node: *const Node, writer: *Writer, raw_text: bool) anyerror!void {
     if (textNode(node)) {
         if (raw_text) try writer.writeAll(std.mem.span(node.v.text.text)) else try escaped(writer, std.mem.span(node.v.text.text), false);
@@ -235,7 +257,7 @@ fn canonicalNode(allocator: Allocator, node: *const Node, writer: *Writer, raw_t
         try writer.writeAll("<action-text-attachment");
         for (attachment_names) |key| if (attachment.get(key)) |value| {
             try writer.print(" {s}=\"", .{key});
-            try escaped(writer, value, true);
+            try canonicalAttribute(writer, value);
             try writer.writeByte('"');
         };
         try writer.writeAll("></action-text-attachment>");
@@ -248,7 +270,7 @@ fn canonicalNode(allocator: Allocator, node: *const Node, writer: *Writer, raw_t
         for (vector.data[0..vector.length]) |raw| {
             const a: *c.GumboAttribute = @ptrCast(@alignCast(raw.?));
             try writer.print(" {s}=\"", .{std.mem.span(a.name)});
-            try escaped(writer, std.mem.span(a.value), true);
+            try canonicalAttribute(writer, std.mem.span(a.value));
             try writer.writeByte('"');
         }
     }
@@ -1180,6 +1202,63 @@ test "canonical storage converts Trix JSON and drops attachment inner HTML" {
     const html = try canonicalize(allocator, " <figure data-trix-attachment='{\"contentType\":\"image/png\",\"url\":\"https://example.com/x.png\",\"caption\":\"Example\"}'><img src=x></figure><action-text-attachment caption=\"missing\"><script>not saved</script></action-text-attachment> ");
     defer allocator.free(html);
     try std.testing.expectEqualStrings("<action-text-attachment content-type=\"image/png\" url=\"https://example.com/x.png\" caption=\"Example\"></action-text-attachment><action-text-attachment caption=\"missing\"></action-text-attachment>", html);
+}
+
+test "canonical attributes decode entities once and use Nokogiri storage escaping" {
+    const allocator = std.testing.allocator;
+    const cases = [_][2][]const u8{
+        .{ "<p title='a<b>c & \"'>x</p>", "<p title=\"a<b>c &amp; &quot;\">x</p>" },
+        .{ "<p title=\"&amp; &quot; &#34; &#x22; &apos; &#39; &#x3c; &lt; &#62; &gt;\">x</p>", "<p title=\"&amp; &quot; &quot; &quot; ' ' < < > >\">x</p>" },
+        // An ambiguous ampersand in an attribute is not a character reference. Neither it nor
+        // a decoded literal entity spelling gets decoded a second time on serialization.
+        .{ "<p title=\"&amp;lt; &notit; &amp=1\">x</p>", "<p title=\"&amp;lt; &amp;notit; &amp;amp=1\">x</p>" },
+        .{ "<p title=\"\u{a0}&nbsp;&#160;&#xa0; café\">x</p>", "<p title=\"&nbsp;&nbsp;&nbsp;&nbsp; café\">x</p>" },
+    };
+    for (cases) |pair| {
+        const html = try canonicalize(allocator, pair[0]);
+        defer allocator.free(html);
+        try std.testing.expectEqualStrings(pair[1], html);
+        const reloaded = try canonicalize(allocator, html);
+        defer allocator.free(reloaded);
+        try std.testing.expectEqualStrings(html, reloaded);
+    }
+}
+
+test "canonical attachment attributes use the same storage serializer" {
+    const allocator = std.testing.allocator;
+    const expected = "<action-text-attachment caption=\"<b> &amp; &quot;q&quot; &nbsp;\"></action-text-attachment>";
+    for ([_][]const u8{
+        "<action-text-attachment caption=\"&lt;b&gt; &amp; &quot;q&quot; &#160;\"></action-text-attachment>",
+        "<figure data-trix-attachment='{\"caption\":\"<b> & \\\"q\\\" \\u00a0\"}'></figure>",
+    }) |body| {
+        const html = try canonicalize(allocator, body);
+        defer allocator.free(html);
+        try std.testing.expectEqualStrings(expected, html);
+    }
+}
+
+test "canonical unsafe attributes remain data through presentation and autolinking" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const body = "<p title=\"x> http://evil.test/ <img src=x onerror=alert(1)>\" onclick=\"alert(2)\">attribute boundary http://example.com/</p><script>alert(3)</script><iframe src=\"javascript:alert(4)\">bad</iframe>";
+    const stored = try canonicalize(allocator, body);
+    try std.testing.expectEqualStrings(body, stored);
+    const html = try renderContext(.{ .allocator = allocator }, stored);
+    try std.testing.expect(std.mem.indexOf(u8, html, "title=\"x&gt; http://evil.test/ &lt;img src=x onerror=alert(1)&gt;\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "href=\"http://evil.test/") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "<a target=\"_blank\" href=\"http://example.com/\">http://example.com/</a>") != null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "<img") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "<script") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "<iframe") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "onclick=") == null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "javascript:") == null);
+    var parsed = try Parse.init(html);
+    defer parsed.deinit();
+    const p = findTag(parsed.root(), "p").?;
+    try std.testing.expectEqualStrings("x> http://evil.test/ <img src=x onerror=alert(1)>", attr(p, "title").?);
+    try std.testing.expect(attr(p, "onclick") == null);
+    try std.testing.expect(findTag(parsed.root(), "img") == null);
 }
 
 test "solo unfurls rebuild validated details rather than accepting content markup" {
