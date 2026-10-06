@@ -111,14 +111,20 @@ const Platform = struct {
     browser: []const u8,
     operating_system: []const u8,
     fn from(ua: []const u8) Platform {
-        const edge = std.mem.find(u8, ua, "Edg") != null;
+        // useragent 0.16 recognizes the legacy Edge product; Edg remains Chrome.
+        var products = std.mem.tokenizeAny(u8, ua, " \t\r\n");
+        var last_product: []const u8 = "";
+        while (products.next()) |product| last_product = product;
+        const edge = std.mem.startsWith(u8, last_product, "Edge/");
         const chrome = !edge and (std.mem.find(u8, ua, "Chrome") != null or std.mem.find(u8, ua, "CriOS") != null);
         const firefox = std.mem.find(u8, ua, "Firefox") != null or std.mem.find(u8, ua, "FxiOS") != null;
         const safari = !chrome and !edge and std.mem.find(u8, ua, "Safari") != null;
-        const ios = std.mem.find(u8, ua, "iPhone") != null or std.mem.find(u8, ua, "iPad") != null or std.mem.find(u8, ua, "iPod") != null;
+        const iphone = std.mem.find(u8, ua, "iPhone") != null;
+        const ipad = std.mem.find(u8, ua, "iPad") != null;
+        const ios = iphone or ipad;
         const android = std.mem.find(u8, ua, "Android") != null;
         const windows = std.mem.find(u8, ua, "Windows") != null;
-        return .{ .edge = edge, .chrome = chrome, .firefox = firefox, .safari = safari, .ios = ios, .android = android, .windows = windows, .desktop = !ios and !android, .browser = if (edge) "Edge" else if (chrome) "Chrome" else if (firefox) "Firefox" else if (safari) "Safari" else "Web browser", .operating_system = if (ios) "iOS" else if (android) "Android" else if (windows) "Windows" else if (std.mem.find(u8, ua, "Mac") != null) "macOS" else "Linux" };
+        return .{ .edge = edge, .chrome = chrome, .firefox = firefox, .safari = safari, .ios = ios, .android = android, .windows = windows, .desktop = !ios and !android, .browser = if (edge) "Edge" else if (chrome) "Chrome" else if (firefox) "Firefox" else if (safari) "Safari" else "Web browser", .operating_system = if (android) "Android" else if (ipad) "iPad" else if (iphone) "iPhone" else if (windows) "Windows" else if (std.mem.find(u8, ua, "Mac") != null) "macOS" else "Linux" };
     }
 };
 
@@ -519,16 +525,8 @@ fn layoutHead(ctx: *Context, w: *Io.Writer, account: model.Account, page_title: 
     try w.writeAll("</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no, interactive-widget=resizes-content\"><meta name=\"view-transition\" content=\"same-origin\"><meta name=\"color-scheme\" content=\"light dark\"><meta name=\"theme-color\" content=\"#ffffff\" media=\"(prefers-color-scheme: light)\"><meta name=\"theme-color\" content=\"#000000\" media=\"(prefers-color-scheme: dark)\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\">");
     try w.print("<meta name=\"current-user-id\" content=\"{d}\" /><meta name=\"current-user-name\" content=\"", .{ctx.user.id});
     try compat.htmlEscape(w, ctx.user.name);
-    try w.writeAll("\" /><meta name=\"action-cable-url\" content=\"");
-    const cable_base = std.mem.trimEnd(u8, ctx.base_url, "/");
-    if (std.mem.startsWith(u8, cable_base, "https://")) {
-        try w.writeAll("wss://");
-        try compat.htmlEscape(w, cable_base[8..]);
-    } else if (std.mem.startsWith(u8, cable_base, "http://")) {
-        try w.writeAll("ws://");
-        try compat.htmlEscape(w, cable_base[7..]);
-    } else return error.InvalidBaseUrl;
-    try w.writeAll("/cable\"><meta name=\"vapid-public-key\"");
+    // CableHelper uses the mounted path, not an absolute WebSocket origin.
+    try w.writeAll("\" /><meta name=\"action-cable-url\" content=\"/cable\"><meta name=\"vapid-public-key\"");
     if (ctx.vapid_public_key) |key| {
         try w.writeAll(" content=\"");
         try compat.htmlEscape(w, key);
@@ -1095,7 +1093,7 @@ fn roomLinkStart(w: *Io.Writer, membership: model.SidebarRoom, direct: bool) !vo
     try w.writeAll(if (direct) "direct" else "align-center gap room btn txt-nowrap");
     if (membership.unread_at != null) try w.writeAll(" unread");
     try w.writeAll("\"");
-    if (direct) try w.print(" data-sorted-list-number=\"{d}\"", .{try compat.epochMilliseconds(membership.membership_updated_at)}) else {
+    if (direct) try w.print(" data-sorted-list-number=\"{d}\"", .{try compat.epochMilliseconds(r.updated_at)}) else {
         try w.writeAll(" data-sorted-list-name=\"");
         try compat.htmlEscape(w, r.name orelse "");
         try w.writeAll("\" style=\"--column-gap: 0.5em\"");
@@ -1226,9 +1224,7 @@ pub fn login(allocator: Allocator, a: *assets_module.Assets, account: model.Acco
     var out = Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     const w = &out.writer;
-    try w.writeAll("<!DOCTYPE html><html><head><title>Sign in</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no, interactive-widget=resizes-content\"><meta name=\"view-transition\" content=\"same-origin\"><meta name=\"color-scheme\" content=\"light dark\"><meta name=\"theme-color\" content=\"#ffffff\" media=\"(prefers-color-scheme: light)\"><meta name=\"theme-color\" content=\"#000000\" media=\"(prefers-color-scheme: dark)\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"action-cable-url\" content=\"");
-    try cableUrl(w, options.base_url);
-    try w.writeAll("\"><meta name=\"vapid-public-key\"");
+    try w.writeAll("<!DOCTYPE html><html><head><title>Sign in</title><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, user-scalable=no, interactive-widget=resizes-content\"><meta name=\"view-transition\" content=\"same-origin\"><meta name=\"color-scheme\" content=\"light dark\"><meta name=\"theme-color\" content=\"#ffffff\" media=\"(prefers-color-scheme: light)\"><meta name=\"theme-color\" content=\"#000000\" media=\"(prefers-color-scheme: dark)\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"action-cable-url\" content=\"/cable\"><meta name=\"vapid-public-key\"");
     if (options.vapid_public_key) |key| {
         try w.writeAll(" content=\"");
         try compat.htmlEscape(w, key);
@@ -1269,7 +1265,9 @@ pub fn login(allocator: Allocator, a: *assets_module.Assets, account: model.Acco
     }
     try w.writeAll("\">\n    ");
     try loginLogo(allocator, a, w, account);
-    try w.writeAll("\n\n    <form class=\"flex flex-column gap\" action=\"/session\" accept-charset=\"UTF-8\" method=\"post\">\n      <fieldset class=\"flex flex-column gap center-block upad\">\n        <legend class=\"txt-large txt-align-center\"><strong>");
+    try w.writeAll("\n\n    <form class=\"flex flex-column gap\" action=\"");
+    try compat.htmlEscape(w, std.mem.trimEnd(u8, options.base_url, "/"));
+    try w.writeAll("/session\" accept-charset=\"UTF-8\" method=\"post\">\n      <fieldset class=\"flex flex-column gap center-block upad\">\n        <legend class=\"txt-large txt-align-center\"><strong>");
     try compat.htmlEscape(w, account.name);
     try w.writeAll("</strong></legend>\n\n        <div class=\"flex align-center gap\">\n          ");
     try translationFor(a, w, "email_address");
@@ -1284,7 +1282,7 @@ pub fn login(allocator: Allocator, a: *assets_module.Assets, account: model.Acco
     try imageFor(a, w, "email.svg", " class=\"colorize--black\" width=\"24\" height=\"24\" aria-hidden=\"true\"");
     try w.writeAll("\n          </label>\n        </div>\n\n        <div class=\"flex align-center gap\">\n          ");
     try translationFor(a, w, "password");
-    try w.writeAll("\n          <label class=\"flex align-center gap input input--actor txt-large\">\n            <input type=\"password\" name=\"password\" id=\"password\" required=\"required\" class=\"input\" autocomplete=\"current-password\" placeholder=\"Enter your password\" maxlength=\"72\" />\n            ");
+    try w.writeAll("\n          <label class=\"flex align-center gap input input--actor txt-large\">\n            <input type=\"password\" name=\"password\" id=\"password\" required=\"required\" class=\"input\" autocomplete=\"current-password\" placeholder=\"Enter your password\" maxlength=\"72\" size=\"72\" />\n            ");
     try imageFor(a, w, "password.svg", " class=\"colorize--black\" width=\"24\" height=\"24\" aria-hidden=\"true\"");
     try w.writeAll("\n          </label>\n        </div>\n\n        <button name=\"log_in\" type=\"submit\" class=\"btn btn--reversed center txt-large\">\n          ");
     try imageFor(a, w, "arrow-right.svg", " aria-hidden=\"true\"");
@@ -1398,6 +1396,41 @@ test "Direct member names use first three initials and English sentence connecto
     try std.testing.expectEqualStrings("JVL+M", try directInitials(a, &.{ u, v }));
     try std.testing.expectEqualStrings("JVL, M, and M", try directInitials(a, &.{ u, v, v }));
 }
+test "Direct sidebar sorting follows the room timestamp rather than its membership" {
+    var out = Io.Writer.Allocating.init(std.testing.allocator);
+    defer out.deinit();
+    const membership = model.SidebarRoom{
+        .room = .{
+            .id = 699448325,
+            .kind = .direct,
+            .creator_id = 127326141,
+            .name = null,
+            .display_name = "David",
+            .created_at = "2026-01-03 21:00:00",
+            .updated_at = "2026-03-02 14:00:00",
+        },
+        .involvement = "everything",
+        .unread_at = null,
+        .membership_updated_at = "2026-01-04 16:16:00",
+    };
+    try roomLinkStart(&out.writer, membership, true);
+    try std.testing.expect(std.mem.find(u8, out.written(), "data-sorted-list-number=\"1772460000000\"") != null);
+    try std.testing.expect(std.mem.find(u8, out.written(), "1767543360000") == null);
+}
+test "Notification instructions retain iOS device names and legacy Edge detection" {
+    const iphone = Platform.from("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1");
+    try std.testing.expect(iphone.ios and iphone.safari and !iphone.desktop);
+    try std.testing.expectEqualStrings("iPhone", iphone.operating_system);
+    const ipad = Platform.from("Mozilla/5.0 (iPad; CPU OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1");
+    try std.testing.expect(ipad.ios and ipad.safari and !ipad.desktop);
+    try std.testing.expectEqualStrings("iPad", ipad.operating_system);
+    const modern_edge = Platform.from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0");
+    try std.testing.expect(modern_edge.chrome and !modern_edge.edge and !modern_edge.safari);
+    try std.testing.expectEqualStrings("Chrome", modern_edge.browser);
+    const legacy_edge = Platform.from("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edge/124.0.0.0");
+    try std.testing.expect(legacy_edge.edge and !legacy_edge.chrome and !legacy_edge.safari);
+    try std.testing.expectEqualStrings("Edge", legacy_edge.browser);
+}
 test "Dimensions preserve integer halves and bound oversized thumbnails" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1437,17 +1470,6 @@ fn writeRoomId(w: *Io.Writer, r: model.Room, prefix_value: []const u8) !void {
         try w.writeByte('_');
     }
     try w.print("{s}_{d}", .{ r.kind.paramKey(), r.id });
-}
-fn cableUrl(w: *Io.Writer, base: []const u8) !void {
-    const value = std.mem.trimEnd(u8, base, "/");
-    if (std.mem.startsWith(u8, value, "https://")) {
-        try w.writeAll("wss://");
-        try compat.htmlEscape(w, value[8..]);
-    } else if (std.mem.startsWith(u8, value, "http://")) {
-        try w.writeAll("ws://");
-        try compat.htmlEscape(w, value[7..]);
-    } else return error.InvalidBaseUrl;
-    try w.writeAll("/cable");
 }
 
 /// reference/app/views/welcome/show.html.erb: a real user with no joined rooms.
