@@ -9,6 +9,7 @@ const asset_module = @import("assets.zig");
 const storage_module = @import("storage.zig");
 const richtext = @import("richtext.zig");
 const views = @import("views.zig");
+const deflater = @import("deflater.zig");
 const params = @import("params.zig");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -23,6 +24,8 @@ pub const App = struct {
     db: database.Database,
     secrets: compatibility.Secrets,
     assets: asset_module.Assets,
+    fragments: views.FragmentCache,
+    deflater: deflater.Cache,
     storage: storage_module.Storage,
     force_ssl: bool,
     app_version: []const u8,
@@ -65,6 +68,7 @@ const Reply = struct {
     status: u16 = 200,
     content_type: []const u8 = "text/html; charset=utf-8",
     body: []const u8 = "",
+    parts: ?views.Rendered = null,
     cache_control: ?[]const u8 = null,
     etag: ?[]const u8 = null,
     last_modified: ?i64 = null,
@@ -104,6 +108,7 @@ const Request = struct {
             .db = &self.app.db,
             .secrets = &self.app.secrets,
             .assets = &self.app.assets,
+            .fragment_cache = &self.app.fragments,
             .user = self.auth.?.user,
             .base_url = self.base_url,
             .path = self.path,
@@ -202,6 +207,7 @@ pub fn handle(raw: *Http.Request, response: *Http.Response, context: *Http.Conte
         .now_unix = try compatibility.unixSeconds(now),
     };
     const reply = dispatch(&request) catch |err| failure(&request, err);
+    defer if (reply.parts) |parts| parts.deinit();
     try finish(&request, reply);
 }
 
@@ -291,13 +297,13 @@ fn dispatch(r: *Request) !Reply {
         const room = try r.app.db.visitedRoom(r.allocator, r.io, user.id, lastRoom(r));
         if (room) |found| return r.redirect(try std.fmt.allocPrint(r.allocator, "/rooms/{d}", .{found.id}));
         var context = try r.viewContext();
-        return .{ .body = try views.welcome(&context), .page = context.frame_id == null, .negotiated = true };
+        return .{ .parts = try views.welcome(&context), .page = context.frame_id == null, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/users/me/sidebar") and r.get()) {
         if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
         const page = try r.app.db.sidebar(r.allocator, r.io, user.id);
         var context = try r.viewContext();
-        return .{ .body = try views.sidebar(&context, page), .page = context.frame_id == null, .negotiated = true };
+        return .{ .parts = try views.sidebar(&context, page), .page = context.frame_id == null, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/searches") or std.mem.eql(u8, r.path, "/searches/clear")) {
         const q = if (r.parameters.get("q")) |value| switch (value) {
@@ -309,7 +315,7 @@ fn dispatch(r: *Request) !Reply {
         if (std.mem.eql(u8, r.path, "/searches") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
             var context = try r.viewContext();
-            return .{ .body = try views.search(&context, page), .page = context.frame_id == null, .negotiated = true };
+            return .{ .parts = try views.search(&context, page), .page = context.frame_id == null, .negotiated = true };
         }
         if (std.mem.eql(u8, r.path, "/searches") and std.mem.eql(u8, r.method, "POST")) {
             const recorded = q orelse return error.InvalidSearchQuery;
@@ -351,7 +357,7 @@ fn dispatch(r: *Request) !Reply {
             const room_text = try std.fmt.allocPrint(r.allocator, "{d}", .{room_id});
             if (existing == null or !std.mem.eql(u8, existing.?, room_text)) try r.cookie("last_room", room_text, false, try compatibility.permanentExpires(r.now_unix));
             var context = try r.viewContext();
-            return .{ .body = try views.room(&context, page), .page = context.frame_id == null, .negotiated = true };
+            return .{ .parts = try views.room(&context, page), .page = context.frame_id == null, .negotiated = true };
         }
         if (std.mem.eql(u8, action, "/messages") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
@@ -362,7 +368,7 @@ fn dispatch(r: *Request) !Reply {
             var context = try r.viewContext();
             var modified: i64 = 0;
             for (messages) |message| modified = @max(modified, try compatibility.unixSeconds(message.updated_at));
-            return .{ .body = try views.messages(&context, messages), .last_modified = modified, .negotiated = true };
+            return .{ .parts = try views.messages(&context, messages), .last_modified = modified, .negotiated = true };
         }
         if (std.mem.eql(u8, action, "/messages") and std.mem.eql(u8, r.method, "POST")) {
             if (!accepts(r.raw, "text/vnd.turbo-stream.html")) return error.NotAcceptable;
@@ -379,12 +385,12 @@ fn dispatch(r: *Request) !Reply {
             const created = r.app.db.createMessage(r.allocator, r.io, user.id, room_id, canonical, client_id, r.now) catch |err| {
                 if (err == error.NotFound) {
                     var context = try r.viewContext();
-                    return .{ .body = try views.roomNotFound(&context), .page = context.frame_id == null, .negotiated = true };
+                    return .{ .parts = try views.roomNotFound(&context), .page = context.frame_id == null, .negotiated = true };
                 }
                 return err;
             };
             var context = try r.viewContext();
-            return .{ .body = try views.created(&context, created), .content_type = "text/vnd.turbo-stream.html; charset=utf-8", .negotiated = true };
+            return .{ .parts = try views.created(&context, created), .content_type = "text/vnd.turbo-stream.html; charset=utf-8", .negotiated = true };
         }
     }
     if (std.mem.eql(u8, r.path, "/cable")) return .{ .status = 501, .content_type = "text/plain; charset=utf-8", .body = "Cable is outside the native leaderboard target.", .conditional = false };
@@ -429,11 +435,17 @@ fn requestParameters(r: *Request) !params.Map {
 fn finish(r: *Request, original: Reply) !void {
     var reply = original;
     var entity = reply.body;
+    var page: ?deflater.Page = if (reply.parts) |parts| try deflater.prepare(&r.app.deflater, r.allocator, parts) else null;
     var tag = reply.etag;
-    if (tag == null and entity.len != 0 and (reply.status == 200 or reply.status == 201) and reply.conditional) {
-        var digest: [32]u8 = undefined;
-        std.crypto.hash.sha2.Sha256.hash(entity, &digest, .{});
-        tag = try std.fmt.allocPrint(r.allocator, "W/\"{x}\"", .{digest[0..16]});
+    const len = if (page) |parts| parts.len else entity.len;
+    if (tag == null and len != 0 and (reply.status == 200 or reply.status == 201) and reply.conditional) {
+        if (page) |parts| {
+            tag = try parts.etag(r.allocator);
+        } else {
+            var digest: [32]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(entity, &digest, .{});
+            tag = try std.fmt.allocPrint(r.allocator, "W/\"{x}\"", .{digest[0..16]});
+        }
     }
     if (r.get() and reply.status == 200 and reply.conditional) {
         const fresh = if (r.raw.header("if-none-match")) |given| if (tag) |etag| etagMatches(given, etag) else false else if (r.raw.header("if-modified-since")) |given| if (reply.last_modified) |modified| std.mem.eql(u8, given, try httpDate(r.allocator, modified)) else false else false;
@@ -441,28 +453,39 @@ fn finish(r: *Request, original: Reply) !void {
             reply.status = 304;
             reply.negotiated = false;
             entity = "";
+            page = null;
         }
     }
-    if (reply.status == 204 or reply.status == 304) entity = "";
+    if (reply.status == 204 or reply.status == 304) {
+        entity = "";
+        page = null;
+    }
     const encoding = compression.negotiate(r.raw.header("accept-encoding"), &compression.supported_default) orelse {
         reply.status = 406;
         reply.content_type = "text/plain; charset=utf-8";
-        entity = "Not Acceptable";
-        return finishUnencoded(r, reply, entity, null, tag);
+        return finishUnencoded(r, reply, "Not Acceptable", null, tag, null);
     };
-    if (encoding != .IDENTITY and reply.status != 204 and reply.status != 304 and compression.shouldCompress(entity.len, reply.content_type, 256)) {
-        const compressed = try compression.encode(r.allocator, encoding, entity, .DEFAULT);
-        if (compressed.len < entity.len) return finishUnencoded(r, reply, compressed, encoding.contentEncoding(), tag);
+    const body_len = if (page) |parts| parts.len else entity.len;
+    if (encoding != .IDENTITY and reply.status != 204 and reply.status != 304 and compression.shouldCompress(body_len, reply.content_type, 256)) {
+        if (encoding == .GZIP and page != null) {
+            const compressed = try page.?.gzip(&r.app.deflater, r.allocator, @truncate(@as(u64, @bitCast(r.now_unix))));
+            if (compressed.len < body_len) return finishUnencoded(r, reply, compressed, encoding.contentEncoding(), tag, null);
+        } else {
+            if (reply.parts) |parts| entity = try parts.materialize(r.allocator);
+            const compressed = try compression.encode(r.allocator, encoding, entity, .DEFAULT);
+            if (compressed.len < body_len) return finishUnencoded(r, reply, compressed, encoding.contentEncoding(), tag, null);
+        }
     }
-    try finishUnencoded(r, reply, entity, null, tag);
+    try finishUnencoded(r, reply, entity, null, tag, page);
 }
 
-fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]const u8, tag: ?[]const u8) !void {
+fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]const u8, tag: ?[]const u8, page: ?deflater.Page) !void {
+    const entity_len = if (page) |parts| parts.len else entity.len;
     var header = Io.Writer.Allocating.init(r.allocator);
     try header.writer.print("HTTP/1.1 {d} {s}\r\n", .{ reply.status, reason(reply.status) });
     if (reply.status != 204 and reply.status != 304) {
         try header.writer.print("Content-Type: {s}\r\n", .{reply.content_type});
-        try header.writer.print("Content-Length: {d}\r\n", .{if (encoding != null) entity.len else reply.content_length orelse entity.len});
+        try header.writer.print("Content-Length: {d}\r\n", .{if (encoding != null) entity_len else reply.content_length orelse entity_len});
     }
     try header.writer.print("Date: {s}\r\n", .{try httpDate(r.allocator, r.now_unix)});
     if (reply.provenance) try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nX-XSS-Protection: 0\r\nX-Permitted-Cross-Domain-Policies: none\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
@@ -496,8 +519,15 @@ fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]c
     try header.writer.writeAll("\r\n");
     r.response.status = @fromBackingInt(@intCast(reply.status));
     try r.response.sendRaw(header.written());
-    if (!std.mem.eql(u8, r.method, "HEAD") and reply.status != 204 and reply.status != 304) try Http.writeAllFD(r.response.fd, entity);
-    r.response.bytes_written = if (std.mem.eql(u8, r.method, "HEAD")) 0 else entity.len;
+    if (!std.mem.eql(u8, r.method, "HEAD") and reply.status != 204 and reply.status != 304) {
+        if (page) |parts| {
+            for (parts.parts) |part| {
+                if (part.glue.len != 0) try Http.writeAllFD(r.response.fd, part.glue);
+                if (part.body.len != 0) try Http.writeAllFD(r.response.fd, part.body);
+            }
+        } else try Http.writeAllFD(r.response.fd, entity);
+    }
+    r.response.bytes_written = if (std.mem.eql(u8, r.method, "HEAD")) 0 else entity_len;
 }
 
 fn failure(r: *Request, err: anyerror) Reply {

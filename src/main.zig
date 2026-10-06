@@ -4,6 +4,8 @@ const http = @import("http.zig");
 const db = @import("db.zig");
 const assets = @import("assets.zig");
 const compat = @import("compat.zig");
+const views = @import("views.zig");
+const deflater = @import("deflater.zig");
 const storage = @import("storage.zig");
 const build_options = @import("build_options");
 
@@ -59,6 +61,10 @@ pub fn main(init: std.process.Init) !void {
     defer app.secrets.deinit();
     app.assets = try assets.Assets.init(init.gpa, io, asset_root);
     defer app.assets.deinit();
+    app.fragments = try views.FragmentCache.init(init.gpa, io, 32 << 20);
+    defer app.fragments.deinit();
+    app.deflater = deflater.Cache.init(init.gpa, io);
+    defer app.deflater.deinit();
     app.preload_link = try preloadHeader(init.gpa, &app.assets);
     defer init.gpa.free(app.preload_link);
     app.storage = try storage.Storage.init(init.gpa, io, files_path, &app.db, &app.secrets);

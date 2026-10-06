@@ -8,7 +8,9 @@ the Rust application. The original Rust implementation remains here as the compa
 
 - Zig++ `0.17.0-dev.2469+zigpp.04926fc36`, `std.Io.Threadz`, and pinned
   [Zix](https://github.com/mattneel/zix) HTTP/1 over Linux `io_uring`; four workers by default.
-- Existing SQLite schema and storage layout; pooled read transactions and a serialized writer.
+- Existing SQLite schema and storage layout; pooled read transactions, 256 prepared statements
+  per connection, batched attachment associations and a serialized writer. Bounded reads execute
+  on the calling worker; database-wide search remains offloaded.
 - Native Rails-compatible signing/encryption, real bcrypt login, session refresh/logout,
   room membership checks and same-origin write policy.
 - Native full/frame room, message pagination, sidebar and reachable-only FTS search rendering;
@@ -27,7 +29,7 @@ authenticated browser-origin HTTP POST, persisted reload and search read-back we
 Normal composer Send-button operation is not yet supported.
 
 The measured build requires Linux. On Debian/Ubuntu, install `pkg-config`, `libsqlite3-dev`,
-`libgumbo-dev`, `libvips-dev` and `ffmpeg`. This host uses libvips 8.15.1 / FFmpeg 6.1.1 rather than
+`libgumbo-dev`, `libvips-dev`, `zlib1g-dev` and `ffmpeg`. This host uses libvips 8.15.1 / FFmpeg 6.1.1 rather than
 the reference's 8.16.1 / 7.1.5: generated-media byte parity is not claimed.
 
 ## Native build and run
@@ -84,7 +86,28 @@ This gate is deliberately a compatibility **subset**, not a claim that the entir
 passes. Its JSON records `whole_campfire_suite_passed: false` and lists uncovered behavior.
 Throughput measurements require this gate, real browser workflows and gzip content checks first.
 
-## Native first measurement — same host
+## Native hot paths
+
+The render/encoding path follows the optimized Rust mechanisms in
+`crates/views/src/fragment_cache.rs`, `crates/views/src/recorded.rs` and
+`crates/kit/src/deflater/splice.rs`, rather than rebuilding and recompressing a whole page:
+
+- A byte-bounded 32 MiB LRU retains immutable message, boost and direct-membership HTML fragments.
+  Keys include source record versions and native template/database/signing/assets identity;
+  host versus detached message rendering and viewing-user membership context remain separate.
+- Recorded responses retain fragment leases and layout gaps, not a flattened page copy. SHA-256
+  and CRC metadata are retained with fragments; ETags combine part digests and layout content.
+- Gzip splices cached raw level-6 deflate pieces using the preceding part's final 32 KiB as
+  dictionary, with at most 256 bytes of layout glue. CRC composition and the final trailer cover
+  the actual ordered response. Text metadata and compressed pieces have bounded caches.
+- Session and room-membership checks still run before rendering. There is no authenticated
+  full-response/path cache; version changes and permission revocation remain observable.
+
+The native database still eagerly hydrates message models before a fragment hit. It does not
+yet reproduce Rust's presenter-level lazy association reads or dedicated writer/checkpointer.
+Those differences remain relevant to performance; they are not hidden by the render cache.
+
+## Native first measurement — unoptimized, same host
 
 Measured on 2026-10-06 on an **AMD Ryzen 9 9955HX3D**, Linux
 `7.2.6-locietta-WSL2-xanmod1`, with four server hardware threads (`8,10,12,14`),
@@ -105,7 +128,7 @@ The native executable was built from `61c393f` in `ReleaseFast`. These measureme
 | Search | 17,897.4 | 1,745.8 | 0.098× | 18.08 |
 | Post a message | 3,531.9 | 2,008.5 | 0.569× | 18.88 |
 
-Cells are medians across three repetitions. **This native target is slower than Rust.**
+Cells are medians across three repetitions. **This first, unoptimized native target was slower than Rust.**
 The POST row remains a partial-application measurement: native broadcast, push and webhook
 delivery are absent. It is not a complete Campfire leaderboard submission.
 

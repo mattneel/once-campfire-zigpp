@@ -10,7 +10,7 @@ const c = @import("c");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 fn exec(database: *db.Database, sql: [:0]const u8) !void {
-    if (c.sqlite3_exec(@ptrCast(database.writer), sql.ptr, null, null, null) != c.SQLITE_OK) return error.TestSeedFailure;
+    if (c.sqlite3_exec(database.writer.raw, sql.ptr, null, null, null) != c.SQLITE_OK) return error.TestSeedFailure;
 }
 fn header(result: storage.Result, name: []const u8) ?[]const u8 {
     for (result.headers) |h| if (std.ascii.eqlIgnoreCase(h.name, name)) return h.value;

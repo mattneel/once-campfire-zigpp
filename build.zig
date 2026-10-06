@@ -19,6 +19,7 @@ pub fn build(b: *std.Build) void {
     app.linkSystemLibrary("sqlite3", .{});
     app.linkSystemLibrary("gumbo", .{});
     app.linkSystemLibrary("vips", .{});
+    app.linkSystemLibrary("z", .{});
     const options = b.addOptions();
     options.addOption([]const u8, "source_root", b.root.joinString(b.allocator, "") catch @panic("out of memory"));
     app.addOptions("build_options", options);
@@ -38,6 +39,7 @@ pub fn build(b: *std.Build) void {
     tests.root_module.linkSystemLibrary("sqlite3", .{});
     tests.root_module.linkSystemLibrary("gumbo", .{});
     tests.root_module.linkSystemLibrary("vips", .{});
+    tests.root_module.linkSystemLibrary("z", .{});
     tests.root_module.addOptions("build_options", options);
     const run_tests = b.addRunArtifact(tests);
     run_tests.addPassthruArgs();

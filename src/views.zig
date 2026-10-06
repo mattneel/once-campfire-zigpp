@@ -1,5 +1,5 @@
 //! Native renderers for crates/views/templates and reference/app/views.
-//! All output and helper values are owned by the request allocator.
+//! Dynamic output/helpers belong to the request allocator; immutable fragment leases outlive it.
 const std = @import("std");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
@@ -10,6 +10,13 @@ const assets_module = @import("assets.zig");
 const richtext = @import("richtext.zig");
 const storage = @import("storage.zig");
 const unicode = @import("views/unicode.zig");
+const fragments = @import("views/fragment_cache.zig");
+const recorded = @import("views/recorded.zig");
+pub const FragmentCache = fragments.FragmentCache;
+pub const FragmentLease = fragments.FragmentLease;
+pub const Part = recorded.Part;
+pub const Rendered = recorded.Rendered;
+const Recorder = recorded.Recorder;
 const fmt = std.fmt.allocPrint;
 
 pub const Context = struct {
@@ -28,7 +35,74 @@ pub const Context = struct {
     flash_notice: ?[]const u8 = null,
     flash_alert: ?[]const u8 = null,
     avatar_urls: std.AutoHashMapUnmanaged(i64, []const u8) = .empty,
+    fragment_cache: ?*FragmentCache = null,
+    cache_namespace: ?[32]u8 = null,
 };
+
+// A native template digest prevents unrelated renderer revisions from sharing entries.
+const template_digest = digest: {
+    @setEvalBranchQuota(20_000_000);
+    var digest: [32]u8 = undefined;
+    std.crypto.hash.sha2.Sha256.hash(@embedFile("views.zig"), &digest, .{});
+    break :digest digest;
+};
+
+fn keyField(hash: *std.crypto.hash.sha2.Sha256, value: []const u8) void {
+    const len: u64 = value.len;
+    hash.update(std.mem.asBytes(&len));
+    hash.update(value);
+}
+
+fn fragmentKey(ctx: *Context, kind: []const u8, id: i64, version: []const u8, extra: []const u8) fragments.Key {
+    if (ctx.cache_namespace == null) {
+        var namespace = std.crypto.hash.sha2.Sha256.init(.{});
+        namespace.update(&template_digest);
+        // The cache can be shared by contexts, but never by different databases/signing keys/assets.
+        const identities = [_]usize{ @intFromPtr(ctx.db), @intFromPtr(ctx.secrets), @intFromPtr(ctx.assets) };
+        namespace.update(std.mem.asBytes(&identities));
+        var result: [32]u8 = undefined;
+        namespace.final(&result);
+        ctx.cache_namespace = result;
+    }
+    var hash = std.crypto.hash.sha2.Sha256.init(.{});
+    hash.update(&ctx.cache_namespace.?);
+    keyField(&hash, kind);
+    hash.update(std.mem.asBytes(&id));
+    keyField(&hash, version);
+    keyField(&hash, extra);
+    var result: fragments.Key = undefined;
+    hash.final(&result);
+    return result;
+}
+
+fn recordedMessage(ctx: *Context, recorder: *Recorder, m: model.Message, detached: bool) !void {
+    const cache = ctx.fragment_cache orelse {
+        try renderMessage(ctx, &recorder.out.writer, m, detached);
+        return;
+    };
+    const key = fragmentKey(ctx, if (detached) "messages/_message/presentation-v3/detached" else "messages/_message/presentation-v3/host", m.id, m.updated_at, if (detached) "" else ctx.base_url);
+    if (cache.get(key)) |lease| return recorder.fragment(lease);
+    var out = Io.Writer.Allocating.init(ctx.allocator);
+    defer out.deinit();
+    try renderMessage(ctx, &out.writer, m, detached);
+    try recorder.fragment(try cache.put(key, out.writer.buffered()));
+}
+
+fn recordedDirect(ctx: *Context, recorder: *Recorder, m: model.SidebarRoom) !void {
+    const cache = ctx.fragment_cache orelse {
+        try directRoom(ctx, &recorder.out.writer, m);
+        return;
+    };
+    // (user,room) identifies the unique membership; the native snapshot lacks its numeric id.
+    // With no version available, never cache it.
+    if (m.membership_updated_at.len == 0) return directRoom(ctx, &recorder.out.writer, m);
+    const key = fragmentKey(ctx, "users/sidebars/rooms/_direct", m.room.id, m.membership_updated_at, std.mem.asBytes(&ctx.user.id));
+    if (cache.get(key)) |lease| return recorder.fragment(lease);
+    var out = Io.Writer.Allocating.init(ctx.allocator);
+    defer out.deinit();
+    try directRoom(ctx, &out.writer, m);
+    try recorder.fragment(try cache.put(key, out.writer.buffered()));
+}
 
 fn asset(ctx: *Context, logical: []const u8) ![]const u8 {
     return ctx.assets.assetPath(logical) orelse error.MissingAsset;
@@ -189,6 +263,21 @@ fn actions(ctx: *Context, w: *Io.Writer, m: model.Message) !void {
 }
 
 fn boost(ctx: *Context, w: *Io.Writer, b: model.Boost) !void {
+    const cache = ctx.fragment_cache orelse return renderBoost(ctx, w, b);
+    const key = fragmentKey(ctx, "messages/boosts/_boost", b.id, b.updated_at, "");
+    if (cache.get(key)) |lease| {
+        defer lease.release();
+        return w.writeAll(lease.bytes());
+    }
+    var out = Io.Writer.Allocating.init(ctx.allocator);
+    defer out.deinit();
+    try renderBoost(ctx, &out.writer, b);
+    const lease = try cache.put(key, out.writer.buffered());
+    defer lease.release();
+    try w.writeAll(lease.bytes());
+}
+
+fn renderBoost(ctx: *Context, w: *Io.Writer, b: model.Boost) !void {
     try w.writeAll("\n  <div id=\"");
     try compat.htmlEscape(w, try fmt(ctx.allocator, "boost_{d}", .{b.id}));
     try w.writeAll("\"\n      class=\"boost boost-item flex-inline postion--relative max-width align-center fill-white gap\"\n      data-controller=\"boost-delete\" data-boost-delete-perform-class=\"boost--deleting\" data-boost-delete-reveal-class=\"expanded\" data-boost-delete-booster-id-value=\"");
@@ -842,10 +931,10 @@ fn timestampNumber(a: Allocator, text: []const u8) ![]const u8 {
 fn accountLogoUrl(a: Allocator, account: model.Account) ![]const u8 {
     return fmt(a, "/account/logo?v={s}", .{try timestampNumber(a, account.updated_at)});
 }
-pub fn search(ctx: *Context, page: model.SearchPage) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn search(ctx: *Context, page: model.SearchPage) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     if (ctx.frame_id != null) {
         try frameHead(w, "");
         try w.writeAll("\n<div id=\"message-area\" class=\"message-area\">\n  <div class=\"message-area--empty min-width center\">\n    <figure class=\"center pad\">\n      <img aria-hidden=\"true\" class=\"colorize--black translucent\" src=\"");
@@ -853,7 +942,7 @@ pub fn search(ctx: *Context, page: model.SearchPage) ![]const u8 {
         try w.writeAll("\" />\n    </figure>\n  </div>\n\n  <div id=\"search-results\" class=\"messages searches__results\" data-controller=\"search-results\" data-search-results-target=\"messages\" data-search-results-me-class=\"message--me\" data-search-results-threaded-class=\"message--threaded\" data-search-results-mentioned-class=\"message--mentioned\" data-search-results-formatted-class=\"message--formatted\">");
         for (page.messages) |m| {
             try w.writeAll("\n    ");
-            try renderMessage(ctx, w, m, false);
+            try recordedMessage(ctx, &recorder, m, false);
         }
         try w.writeAll("\n  </div></div>\n");
         try w.writeAll("</body></html>");
@@ -889,7 +978,7 @@ pub fn search(ctx: *Context, page: model.SearchPage) ![]const u8 {
         try w.writeAll("\" />\n    </figure>\n  </div>\n\n  <div id=\"search-results\" class=\"messages searches__results\" data-controller=\"search-results\" data-search-results-target=\"messages\" data-search-results-me-class=\"message--me\" data-search-results-threaded-class=\"message--threaded\" data-search-results-mentioned-class=\"message--mentioned\" data-search-results-formatted-class=\"message--formatted\">");
         for (page.messages) |m| {
             try w.writeAll("\n    ");
-            try renderMessage(ctx, w, m, false);
+            try recordedMessage(ctx, &recorder, m, false);
         }
         try w.writeAll("\n  </div></div>\n");
         try w.writeAll("<footer id=\"footer\">");
@@ -935,7 +1024,7 @@ pub fn search(ctx: *Context, page: model.SearchPage) ![]const u8 {
         try w.writeAll("</aside>");
         try layoutFoot(ctx, w);
     }
-    return out.toOwnedSlice();
+    return recorder.finish();
 }
 fn queryEncode(a: Allocator, text: []const u8) ![]const u8 {
     var out = Io.Writer.Allocating.init(a);
@@ -1014,10 +1103,10 @@ fn invitation(ctx: *Context, w: *Io.Writer, page: model.RoomPage) !void {
     try w.writeAll("  </div>\n</div>\n\n");
     try w.writeAll("\n      </div>\n    </div>\n  </div>\n");
 }
-pub fn room(ctx: *Context, page: model.RoomPage) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn room(ctx: *Context, page: model.RoomPage) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     const gid = try compat.globalIdParam(ctx.allocator, page.room.kind.className(), page.room.id);
     const stream = try ctx.secrets.signedStream(ctx.allocator, &.{ gid, "messages" });
     const head = try fmt(ctx.allocator, "<meta name=\"turbo-cache-control\" content=\"no-preview\"><meta name=\"current-room-id\" content=\"{d}\">", .{page.room.id});
@@ -1041,7 +1130,7 @@ pub fn room(ctx: *Context, page: model.RoomPage) ![]const u8 {
         }
         for (page.messages) |m| {
             try w.writeAll("\n    ");
-            try renderMessage(ctx, w, m, false);
+            try recordedMessage(ctx, &recorder, m, false);
         }
         try w.writeAll("\n  </div>\n\n  <turbo-cable-stream-source channel=\"RoomMessagesChannel\" signed-stream-name=\"");
         try compat.htmlEscape(w, stream);
@@ -1071,7 +1160,7 @@ pub fn room(ctx: *Context, page: model.RoomPage) ![]const u8 {
         }
         for (page.messages) |m| {
             try w.writeAll("\n    ");
-            try renderMessage(ctx, w, m, false);
+            try recordedMessage(ctx, &recorder, m, false);
         }
         try w.writeAll("\n  </div>\n\n  <turbo-cable-stream-source channel=\"RoomMessagesChannel\" signed-stream-name=\"");
         try compat.htmlEscape(w, stream);
@@ -1085,24 +1174,24 @@ pub fn room(ctx: *Context, page: model.RoomPage) ![]const u8 {
         try w.writeAll("</turbo-frame></aside>");
         try layoutFoot(ctx, w);
     }
-    return out.toOwnedSlice();
+    return recorder.finish();
 }
-pub fn messages(ctx: *Context, items: []const model.Message) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    for (items) |m| try renderMessage(ctx, &out.writer, m, false);
-    return out.toOwnedSlice();
+pub fn messages(ctx: *Context, items: []const model.Message) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    for (items) |m| try recordedMessage(ctx, &recorder, m, false);
+    return recorder.finish();
 }
-pub fn created(ctx: *Context, m: model.Message) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn created(ctx: *Context, m: model.Message) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     try w.writeAll("<turbo-stream action=\"append\" target=\"");
     try w.print("messages_{s}_{d}", .{ m.room_kind.paramKey(), m.room_id });
     try w.writeAll("\"><template>");
-    try renderMessage(ctx, w, m, true);
+    try recordedMessage(ctx, &recorder, m, true);
     try w.writeAll("</template></turbo-stream>");
-    return out.toOwnedSlice();
+    return recorder.finish();
 }
 fn roomLinkStart(w: *Io.Writer, membership: model.SidebarRoom, direct: bool) !void {
     const r = membership.room;
@@ -1189,14 +1278,15 @@ fn streamSource(w: *Io.Writer, signed: []const u8) !void {
     try compat.htmlEscape(w, signed);
     try w.writeAll("\"></turbo-cable-stream-source>");
 }
-fn sidebarContent(ctx: *Context, w: *Io.Writer, page: model.Sidebar) !void {
+fn sidebarContent(ctx: *Context, recorder: *Recorder, page: model.Sidebar) !void {
+    const w = &recorder.out.writer;
     try sidebarFrame(w, null);
     try streamSource(w, try ctx.secrets.signedStream(ctx.allocator, &.{"rooms"}));
     try streamSource(w, try ctx.secrets.signedStream(ctx.allocator, &.{ try compat.globalIdParam(ctx.allocator, "User", page.user.id), "rooms" }));
     try w.writeAll("<div class=\"sidebar__container overflow-y overflow-hide-scrollbar\" data-controller=\"badge-dot\" data-badge-dot-unread-class=\"unread\" data-action=\"rooms-list:unread@window-&gt;badge-dot#update rooms-list:read@window-&gt;badge-dot#update turbo:submit-start-&gt;turbo-frame#unpermanize\"><turbo-frame id=\"direct_rooms_control\" target=\"_top\"><div class=\"directs gap overflow-x overflow-hide-scrollbar\"><a class=\"direct direct__new\" data-turbo-frame=\"_self\" href=\"/rooms/directs/new\"><span class=\"avatar avatar--icon\">");
     try image(ctx, w, "messages-add.svg", " width=\"20\" height=\"20\" aria-hidden=\"true\" class=\"colorize--black\"");
     try w.writeAll("</span><span class=\"direct__author flex max-width min-width border-radius pad-inline-half\"><span class=\"for-screen-reader\">New</span><span class=\"txt-small overflow-clip\">Ping</span></span></a><div id=\"direct_rooms\" contents data-controller=\"sorted-list\" data-action=\"rooms-list:unread@window-&gt;sorted-list#updateItem\">");
-    for (page.directs) |m| try directRoom(ctx, w, m);
+    for (page.directs) |m| try recordedDirect(ctx, recorder, m);
     try w.writeAll("</div><div contents>");
     for (page.direct_placeholder_users) |u| try placeholder(ctx, w, u);
     try w.writeAll("</div></div></turbo-frame><div class=\"rooms position-relative flex flex-column gap\"><div id=\"shared_rooms\" contents data-controller=\"sorted-list\">");
@@ -1221,22 +1311,22 @@ fn sidebarContent(ctx: *Context, w: *Io.Writer, page: model.Sidebar) !void {
     try image(ctx, w, "settings.svg", " width=\"20\" height=\"20\" aria-hidden=\"true\" style=\"view-transition-name: account-settings\"");
     try w.writeAll("<span class=\"for-screen-reader\">Account Settings</span></a></div></turbo-frame>");
 }
-pub fn sidebar(ctx: *Context, page: model.Sidebar) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn sidebar(ctx: *Context, page: model.Sidebar) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     if (ctx.frame_id != null) {
         try frameHead(w, "");
-        try sidebarContent(ctx, w, page);
+        try sidebarContent(ctx, &recorder, page);
         try w.writeAll("</body></html>");
     } else {
         try layoutHead(ctx, w, page.account, "Campfire", "", "");
         try layoutFlash(ctx, w);
-        try sidebarContent(ctx, w, page);
+        try sidebarContent(ctx, &recorder, page);
         try w.writeAll("<footer id=\"footer\"></footer></main><aside id=\"sidebar\" data-controller=\"toggle-class\" data-toggle-class-toggle-class=\"open\"></aside>");
         try layoutFoot(ctx, w);
     }
-    return out.toOwnedSlice();
+    return recorder.finish();
 }
 pub const LoginOptions = struct { base_url: []const u8, app_version: []const u8 = "native Zig++", vapid_public_key: ?[]const u8 = null, email_address: ?[]const u8 = null };
 pub fn login(allocator: Allocator, a: *assets_module.Assets, account: model.Account, alert: ?[]const u8, options: LoginOptions) ![]const u8 {
@@ -1486,10 +1576,10 @@ fn writeRoomId(w: *Io.Writer, r: model.Room, prefix_value: []const u8) !void {
 }
 
 /// reference/app/views/welcome/show.html.erb: a real user with no joined rooms.
-pub fn welcome(ctx: *Context) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn welcome(ctx: *Context) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     if (ctx.frame_id != null) {
         try frameHead(w, "");
     } else {
@@ -1510,14 +1600,14 @@ pub fn welcome(ctx: *Context) ![]const u8 {
         try w.writeAll("</turbo-frame></aside>");
         try layoutFoot(ctx, w);
     }
-    return out.toOwnedSlice();
+    return recorder.finish();
 }
 
 /// MessagesController#create's HTML response when the room has been deleted.
-pub fn roomNotFound(ctx: *Context) ![]const u8 {
-    var out = Io.Writer.Allocating.init(ctx.allocator);
-    defer out.deinit();
-    const w = &out.writer;
+pub fn roomNotFound(ctx: *Context) !Rendered {
+    var recorder = Recorder.init(ctx.allocator);
+    defer recorder.deinit();
+    const w = &recorder.out.writer;
     if (ctx.frame_id != null) {
         try frameHead(w, "");
     } else {
@@ -1532,5 +1622,5 @@ pub fn roomNotFound(ctx: *Context) ![]const u8 {
         try w.writeAll("<footer id=\"footer\"></footer></main><aside id=\"sidebar\" data-controller=\"toggle-class\" data-toggle-class-toggle-class=\"open\"></aside>");
         try layoutFoot(ctx, w);
     }
-    return out.toOwnedSlice();
+    return recorder.finish();
 }

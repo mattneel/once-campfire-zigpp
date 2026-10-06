@@ -30,7 +30,31 @@ fn text(s: []const u8) Value {
 fn optional(s: ?[]const u8) Value {
     return if (s) |v| text(v) else .null;
 }
-const Conn = *c.sqlite3;
+const Conn = *Connection;
+/// Owned by one pool lease or the writer mutex, never shared between active calls.
+/// Like crates/db/src/database.rs, each connection keeps at most 256 statements.
+const Connection = struct {
+    raw: *c.sqlite3,
+    allocator: Allocator,
+    statements: [256]Entry = @splat(.{}),
+    count: usize = 0,
+    eviction: usize = 0,
+
+    const Entry = struct {
+        raw: ?*c.sqlite3_stmt = null,
+        hash: u64 = 0,
+        busy: bool = false,
+    };
+
+    fn close(conn: Conn) void {
+        for (conn.statements[0..conn.count]) |entry| {
+            std.debug.assert(!entry.busy);
+            if (entry.raw) |raw| _ = c.sqlite3_finalize(raw);
+        }
+        _ = c.sqlite3_close(conn.raw);
+        conn.allocator.destroy(conn);
+    }
+};
 const Reader = struct { conn: Conn, busy: bool = false };
 const migrations = [_][]const u8{ "20231215043540", "20231220143106", "20240110071740", "20240115124901", "20240130003150", "20240130213001", "20240131105830", "20240209110503", "20250825100957", "20250825100958", "20250825100959", "20251126092013", "20251126115722", "20251126130131", "20251212154340" };
 const user_columns = "u.id,u.name,u.bio,u.email_address,u.password_digest,u.role,u.status,u.created_at,u.updated_at";
@@ -57,19 +81,19 @@ pub const Database = struct {
         if (readers == 0 or path.len == 0 or std.mem.indexOfScalar(u8, path, 0) != null or std.mem.eql(u8, path, ":memory:")) return error.InvalidParam;
         const path_z = try allocator.dupeSentinel(u8, path, 0);
         defer allocator.free(path_z);
-        const writer = try open(path_z);
-        errdefer _ = c.sqlite3_close(writer);
-        const filename = c.sqlite3_db_filename(writer, "main");
+        const writer = try open(allocator, path_z);
+        errdefer writer.close();
+        const filename = c.sqlite3_db_filename(writer.raw, "main");
         if (filename == null or std.mem.span(filename).len == 0) return error.InvalidParam;
         try prepareSchema(writer, now);
         const pool = try allocator.alloc(Reader, readers);
         errdefer allocator.free(pool);
         var opened: usize = 0;
         errdefer {
-            for (pool[0..opened]) |r| _ = c.sqlite3_close(r.conn);
+            for (pool[0..opened]) |r| r.conn.close();
         }
         for (pool) |*r| {
-            r.* = .{ .conn = try open(path_z) };
+            r.* = .{ .conn = try open(allocator, path_z) };
             opened += 1;
             try exec(r.conn, "PRAGMA query_only=ON", &.{});
         }
@@ -81,8 +105,8 @@ pub const Database = struct {
         self.io.blocking(deinitIn, .{self});
     }
     fn deinitIn(self: *Database) void {
-        for (self.readers) |r| _ = c.sqlite3_close(r.conn);
-        _ = c.sqlite3_close(self.writer);
+        for (self.readers) |r| r.conn.close();
+        self.writer.close();
         self.allocator.free(self.readers);
         self.* = undefined;
     }
@@ -268,7 +292,7 @@ pub const Database = struct {
     pub fn search(self: *Database, allocator: Allocator, io: Io, user_id: i64, q: ?[]const u8, return_room_id: ?i64) !model.SearchPage {
         const i = try self.acquire(io);
         defer self.release(io, i);
-        return readCall(io, self.readers[i].conn, searchIn, .{ allocator, self.readers[i].conn, user_id, q, return_room_id });
+        return readCallOffloaded(io, self.readers[i].conn, searchIn, .{ allocator, self.readers[i].conn, user_id, q, return_room_id });
     }
     fn searchIn(allocator: Allocator, conn: Conn, user_id: i64, q: ?[]const u8, return_room_id: ?i64) !model.SearchPage {
         try active(conn, user_id);
@@ -343,7 +367,7 @@ pub const Database = struct {
         try access(conn, user_id, room_id);
         // Rails accepts empty bodies; do not invent a nonempty validation.
         try exec(conn, "INSERT INTO messages(client_message_id,creator_id,room_id,created_at,updated_at) VALUES(?,?,?,?,?)", &.{ text(client_id), int(user_id), int(room_id), text(now), text(now) });
-        const id = c.sqlite3_last_insert_rowid(conn);
+        const id = c.sqlite3_last_insert_rowid(conn.raw);
         if (body) |html| try exec(conn, "INSERT INTO action_text_rich_texts(record_type,record_id,name,body,created_at,updated_at) VALUES('Message',?,'body',?,?,?)", &.{ int(id), text(html), text(now), text(now) });
         try exec(conn, "UPDATE rooms SET updated_at=? WHERE id=?", &.{ text(now), int(room_id) });
         const created = try messageWhere(allocator, conn, "WHERE m.id=?", &.{int(id)}, false);
@@ -411,13 +435,13 @@ pub const Database = struct {
                 return winner;
             }
             try exec(conn, "INSERT INTO active_storage_variant_records(blob_id,variation_digest) VALUES(?,?)", &.{ int(blob_id), text(d) });
-            record_id = c.sqlite3_last_insert_rowid(conn);
+            record_id = c.sqlite3_last_insert_rowid(conn.raw);
         } else if (try attachedBlob(allocator, conn, record_type, record_id, name)) |winner| {
             try exec(conn, "COMMIT", &.{});
             return winner;
         }
         try exec(conn, "INSERT INTO active_storage_blobs(key,filename,content_type,byte_size,checksum,metadata,service_name,created_at) VALUES(?,?,?,?,?,?,?,?)", &.{ text(image.key), text(image.filename), optional(image.content_type), int(image.byte_size), optional(image.checksum), optional(image.metadata), text(image.service_name), text(now) });
-        const image_id = c.sqlite3_last_insert_rowid(conn);
+        const image_id = c.sqlite3_last_insert_rowid(conn.raw);
         try exec(conn, "INSERT INTO active_storage_attachments(record_type,record_id,name,blob_id,created_at) VALUES(?,?,?,?,?)", &.{ text(record_type), int(record_id), text(name), int(image_id), text(now) });
         const recorded = (try blobIn(allocator, conn, image_id)) orelse return error.DatabaseCorrupt;
         try exec(conn, "COMMIT", &.{});
@@ -425,9 +449,18 @@ pub const Database = struct {
     }
 };
 
-/// The pool lease and fiber locks stay on the task; snapshot and SQLite work share one
-/// blocking dispatch, including cleanup, so WAL/FS/busy waits cannot occupy Threadz workers.
+/// Rust's Database::read executes a leased, bounded read on the calling worker.
+/// Keep the existing SQLite snapshot across all association queries.
 fn readCall(io: Io, conn: Conn, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) @typeInfo(@TypeOf(function)).@"fn".return_type.? {
+    _ = io;
+    try exec(conn, "BEGIN", &.{});
+    defer rollback(conn);
+    return @call(.auto, function, args);
+}
+
+/// Search work grows with the database and stays off runtime workers, as Rust's
+/// read_offloaded does. The pool lease remains held until dispatch completes.
+fn readCallOffloaded(io: Io, conn: Conn, function: anytype, args: std.meta.ArgsTuple(@TypeOf(function))) @typeInfo(@TypeOf(function)).@"fn".return_type.? {
     const Args = std.meta.ArgsTuple(@TypeOf(function));
     const Result = @typeInfo(@TypeOf(function)).@"fn".return_type.?;
     return io.blocking(struct {
@@ -457,26 +490,72 @@ fn failure(code: c_int) Error {
 
 const Statement = struct {
     raw: *c.sqlite3_stmt,
+    conn: Conn,
+    slot: ?usize,
+
     fn init(conn: Conn, sql: [:0]const u8, values: []const Value) !Statement {
-        var raw: ?*c.sqlite3_stmt = null;
-        const code = c.sqlite3_prepare_v2(conn, sql.ptr, @intCast(sql.len), &raw, null);
-        if (code != c.SQLITE_OK) return failure(code);
-        const stmt = raw orelse return error.DatabaseFailure;
-        errdefer _ = c.sqlite3_finalize(stmt);
+        const hash = std.hash.Wyhash.hash(0, sql);
+        var slot: ?usize = null;
+        for (conn.statements[0..conn.count], 0..) |*entry, i| {
+            if (!entry.busy and entry.hash == hash) {
+                const saved = c.sqlite3_sql(entry.raw.?);
+                if (saved != null and std.mem.eql(u8, std.mem.span(saved), sql)) {
+                    slot = i;
+                    break;
+                }
+            }
+        }
+        var stmt: *c.sqlite3_stmt = undefined;
+        if (slot) |i| {
+            stmt = conn.statements[i].raw.?;
+        } else {
+            var raw: ?*c.sqlite3_stmt = null;
+            const code = c.sqlite3_prepare_v2(conn.raw, sql.ptr, @intCast(sql.len), &raw, null);
+            if (code != c.SQLITE_OK) {
+                if (raw) |partial| _ = c.sqlite3_finalize(partial);
+                return failure(code);
+            }
+            stmt = raw orelse return error.DatabaseFailure;
+            if (conn.count < conn.statements.len) {
+                slot = conn.count;
+                conn.count += 1;
+            } else {
+                // Never evict a leased statement. A nested checkout of the same
+                // SQL gets a different handle; if all slots are busy it is uncached.
+                for (0..conn.statements.len) |offset| {
+                    const i = (conn.eviction + offset) % conn.statements.len;
+                    if (!conn.statements[i].busy) {
+                        _ = c.sqlite3_finalize(conn.statements[i].raw.?);
+                        slot = i;
+                        conn.eviction = (i + 1) % conn.statements.len;
+                        break;
+                    }
+                }
+            }
+            if (slot) |i| conn.statements[i] = .{ .raw = stmt, .hash = hash };
+        }
+        if (slot) |i| conn.statements[i].busy = true;
+        var statement: Statement = .{ .raw = stmt, .conn = conn, .slot = slot };
+        errdefer statement.deinit();
         if (@as(usize, @intCast(c.sqlite3_bind_parameter_count(stmt))) != values.len) return error.InvalidParam;
         for (values, 1..) |v, i| {
             const result = switch (v) {
                 .integer => |n| c.sqlite3_bind_int64(stmt, @intCast(i), n),
-                // Borrowed until finalize; callers keep every bound slice alive for that scope.
+                // Borrowed for the lease; deinit clears bindings before releasing.
                 .text => |s| c.sqlite3_bind_text(stmt, @intCast(i), s.ptr, @intCast(s.len), null),
                 .null => c.sqlite3_bind_null(stmt, @intCast(i)),
             };
             if (result != c.SQLITE_OK) return failure(result);
         }
-        return .{ .raw = stmt };
+        return statement;
     }
     fn deinit(s: *Statement) void {
-        _ = c.sqlite3_finalize(s.raw);
+        if (s.slot) |i| {
+            // reset reports the previous step's error but still resets the VM.
+            _ = c.sqlite3_reset(s.raw);
+            _ = c.sqlite3_clear_bindings(s.raw);
+            s.conn.statements[i].busy = false;
+        } else _ = c.sqlite3_finalize(s.raw);
     }
     fn next(s: *Statement) !bool {
         const result = c.sqlite3_step(s.raw);
@@ -509,30 +588,38 @@ fn exec(conn: Conn, sql: [:0]const u8, values: []const Value) !void {
     while (try s.next()) {}
 }
 fn rollback(conn: Conn) void {
-    _ = c.sqlite3_exec(conn, "ROLLBACK", null, null, null);
+    exec(conn, "ROLLBACK", &.{}) catch {};
 }
 fn exists(conn: Conn, sql: [:0]const u8, values: []const Value) !bool {
     var s = try Statement.init(conn, sql, values);
     defer s.deinit();
     return s.next();
 }
-fn open(path: [:0]const u8) !Conn {
-    var conn: ?Conn = null;
-    const code = c.sqlite3_open_v2(path.ptr, &conn, c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_NOMUTEX | c.SQLITE_OPEN_URI, null);
-    const db = conn orelse return error.DatabaseIo;
+fn open(allocator: Allocator, path: [:0]const u8) !Conn {
+    var raw: ?*c.sqlite3 = null;
+    const code = c.sqlite3_open_v2(path.ptr, &raw, c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_NOMUTEX | c.SQLITE_OPEN_URI, null);
+    const db = raw orelse return error.DatabaseIo;
     errdefer _ = c.sqlite3_close(db);
     if (code != c.SQLITE_OK) return failure(code);
     _ = c.sqlite3_extended_result_codes(db, 1);
     const timeout_code = c.sqlite3_busy_timeout(db, 5000);
     if (timeout_code != c.SQLITE_OK) return failure(timeout_code);
-    for ([_][:0]const u8{ "PRAGMA foreign_keys=ON", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA journal_size_limit=67108864", "PRAGMA cache_size=2000" }) |sql| try exec(db, sql, &.{});
-    return db;
+    const conn = try allocator.create(Connection);
+    conn.* = .{ .raw = db, .allocator = allocator };
+    errdefer {
+        for (conn.statements[0..conn.count]) |entry| if (entry.raw) |stmt| {
+            _ = c.sqlite3_finalize(stmt);
+        };
+        allocator.destroy(conn);
+    }
+    for ([_][:0]const u8{ "PRAGMA foreign_keys=ON", "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA journal_size_limit=67108864", "PRAGMA cache_size=2000" }) |sql| try exec(conn, sql, &.{});
+    return conn;
 }
 fn prepareSchema(conn: Conn, now: []const u8) !void {
     if (!try exists(conn, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'", &.{})) {
         try exec(conn, "BEGIN IMMEDIATE", &.{});
         errdefer rollback(conn);
-        const code = c.sqlite3_exec(conn, schema.sql.ptr, null, null, null);
+        const code = c.sqlite3_exec(conn.raw, schema.sql.ptr, null, null, null);
         if (code != c.SQLITE_OK) return failure(code);
         var n = migrations.len;
         while (n > 0) {
@@ -666,24 +753,67 @@ fn messageWhere(allocator: Allocator, conn: Conn, comptime clause: []const u8, v
     var s = try Statement.init(conn, message_select ++ clause, values);
     defer s.deinit();
     var list: std.ArrayList(model.Message) = .empty;
+    var attachment_ids: [100]?i64 = undefined;
     while (try s.next()) {
+        if (list.items.len == attachment_ids.len) return error.DatabaseCorrupt;
+        attachment_ids[list.items.len] = if (c.sqlite3_column_type(s.raw, 21) == c.SQLITE_NULL) null else s.integer(21);
         const id = s.integer(0);
         const room_kind = try kind(s.bytes(16));
         const creator = found: {
             for (list.items) |previous| if (previous.creator.id == s.integer(6)) break :found previous.creator;
             break :found try readUser(allocator, conn, &s, 6);
         };
-        const attachment = if (c.sqlite3_column_type(s.raw, 21) == c.SQLITE_NULL) null else try blobIn(allocator, conn, s.integer(21));
         const room_name = found: {
             for (list.items) |previous| if (previous.room_id == s.integer(2)) break :found previous.room_name;
             if (room_kind == .direct) break :found (try readRoom(allocator, conn, &s, 15, -1)).display_name;
             break :found (try s.nullable(allocator, 18)) orelse "";
         };
-        try list.append(allocator, .{ .id = id, .client_message_id = try s.string(allocator, 1), .room_id = s.integer(2), .created_at = try s.string(allocator, 3), .updated_at = try s.string(allocator, 4), .body = try s.string(allocator, 5), .creator = creator, .room_kind = room_kind, .room_name = room_name, .attachment = attachment });
+        try list.append(allocator, .{ .id = id, .client_message_id = try s.string(allocator, 1), .room_id = s.integer(2), .created_at = try s.string(allocator, 3), .updated_at = try s.string(allocator, 4), .body = try s.string(allocator, 5), .creator = creator, .room_kind = room_kind, .room_name = room_name, .attachment = null });
     }
+    try loadAttachments(allocator, conn, list.items, attachment_ids[0..list.items.len]);
     try loadBoosts(allocator, conn, list.items);
     if (reverse) std.mem.reverse(model.Message, list.items);
     return list.toOwnedSlice(allocator);
+}
+
+/// Hydrate actual blob IDs selected by the page's has-one attachment query. No
+/// repeat pagination query and no cross-snapshot association/model cache.
+fn loadAttachments(allocator: Allocator, conn: Conn, messages: []model.Message, ids: []const ?i64) !void {
+    const prefix = "SELECT " ++ blob_columns ++ " FROM active_storage_blobs b WHERE b.id IN(";
+    var sql: [prefix.len + 200 + 2]u8 = undefined;
+    @memcpy(sql[0..prefix.len], prefix);
+    var length = prefix.len;
+    var params: [100]Value = undefined;
+    var count: usize = 0;
+    for (ids) |optional_id| {
+        const id = optional_id orelse continue;
+        var duplicate = false;
+        for (params[0..count]) |param| if (param.integer == id) {
+            duplicate = true;
+            break;
+        };
+        if (duplicate) continue;
+        if (count > 0) {
+            sql[length] = ',';
+            length += 1;
+        }
+        sql[length] = '?';
+        length += 1;
+        params[count] = int(id);
+        count += 1;
+    }
+    if (count == 0) return;
+    sql[length] = ')';
+    length += 1;
+    sql[length] = 0;
+    var s = try Statement.init(conn, sql[0..length :0], params[0..count]);
+    defer s.deinit();
+    while (try s.next()) {
+        const blob = try readBlob(allocator, &s);
+        for (messages, ids) |*message, id| {
+            if (id != null and id.? == blob.id) message.attachment = blob;
+        }
+    }
 }
 fn loadBoosts(allocator: Allocator, conn: Conn, messages: []model.Message) !void {
     if (messages.len == 0) return;
@@ -871,7 +1001,7 @@ fn seed(conn: Conn) !void {
         \\INSERT INTO active_storage_blobs(id,key,filename,byte_size,content_type,service_name,created_at) VALUES(1,'avatar-key','avatar.png',123,'image/png','local','2026-01-01 00:00:00'),(2,'logo-key','logo.svg',40,'image/svg+xml','local','2026-01-01 00:00:00');
         \\INSERT INTO active_storage_attachments(record_type,record_id,name,blob_id,created_at) VALUES('User',1,'avatar',1,'2026-01-01 00:00:00'),('Account',1,'logo',2,'2026-01-01 00:00:00');
     ;
-    const code = c.sqlite3_exec(conn, sql, null, null, null);
+    const code = c.sqlite3_exec(conn.raw, sql, null, null, null);
     if (code != c.SQLITE_OK) return failure(code);
 }
 
@@ -991,7 +1121,7 @@ test "foreign room writes roll back and database failures differ from missing re
     const io = std.testing.io;
     try std.testing.expectError(error.NotFound, t.db.createMessage(a, io, 1, 2, "not allowed", null, "2026-01-10 12:00:00"));
     try std.testing.expect(!try exists(t.db.writer, "SELECT 1 FROM messages", &.{}));
-    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer));
+    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer.raw));
     try std.testing.expectError(error.DatabaseConstraint, exec(t.db.writer, "INSERT INTO messages(client_message_id,creator_id,room_id,created_at,updated_at) VALUES('bad',999,1,'2026-01-01','2026-01-01')", &.{}));
     try std.testing.expect((try t.db.findUser(a, io, 999)) == null);
     try exec(t.db.writer, "DELETE FROM accounts", &.{});
@@ -1123,7 +1253,7 @@ test "failed richtext insertion rolls back message room and callback-visible wri
     try std.testing.expect(!try exists(t.db.writer, "SELECT 1 FROM message_search_index", &.{}));
     try std.testing.expect(!try exists(t.db.writer, "SELECT 1 FROM memberships WHERE unread_at IS NOT NULL", &.{}));
     try std.testing.expectEqualStrings("2026-01-01 00:00:00", (try t.db.roomPage(a, io, 1, 1, null)).room.updated_at);
-    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer));
+    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer.raw));
 }
 
 test "view snapshots hydrate stored message attachment boosts and all-member direct room labels" {
@@ -1190,7 +1320,7 @@ test "absent message body stays absent while explicitly empty body creates richt
     try std.testing.expect(try exists(t.db.writer, "SELECT 1 FROM message_search_index WHERE rowid=? AND body=''", &.{int(absent.id)}));
     const explicit = try t.db.createMessage(a, io, 1, 1, "", "explicit", "2026-01-10 12:01:00");
     try std.testing.expect(try exists(t.db.writer, "SELECT 1 FROM action_text_rich_texts WHERE record_type='Message' AND record_id=? AND name='body' AND body=''", &.{int(explicit.id)}));
-    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer));
+    try std.testing.expectEqual(@as(c_int, 1), c.sqlite3_get_autocommit(t.db.writer.raw));
 }
 
 test "sidebar carries membership timestamp independently of room activity order" {
@@ -1206,4 +1336,114 @@ test "sidebar carries membership timestamp independently of room activity order"
     try std.testing.expectEqual(@as(i64, 3), page.directs[1].room.id);
     try std.testing.expectEqualStrings("2026-02-01 01:02:03.123456", page.directs[1].membership_updated_at);
     try std.testing.expectEqualStrings("2026-01-03 00:00:00", page.directs[1].room.updated_at);
+}
+
+test "nested bound cursors remain independent and failed bindings do not poison later queries" {
+    var t = try TestDatabase.init();
+    defer t.deinit();
+    const sql = "SELECT id FROM users WHERE id>=? ORDER BY id";
+    var first = try Statement.init(t.db.writer, sql, &.{int(1)});
+    defer first.deinit();
+    try std.testing.expect(try first.next());
+    try std.testing.expectEqual(@as(i64, 1), first.integer(0));
+    {
+        var second = try Statement.init(t.db.writer, sql, &.{int(3)});
+        defer second.deinit();
+        try std.testing.expect(try second.next());
+        try std.testing.expectEqual(@as(i64, 3), second.integer(0));
+        try std.testing.expectEqual(@as(i64, 1), first.integer(0));
+        try std.testing.expect(try first.next());
+        try std.testing.expectEqual(@as(i64, 2), first.integer(0));
+    }
+    try std.testing.expectError(error.InvalidParam, Statement.init(t.db.writer, sql, &.{}));
+    var third = try Statement.init(t.db.writer, sql, &.{int(8)});
+    defer third.deinit();
+    try std.testing.expect(try third.next());
+    try std.testing.expectEqual(@as(i64, 8), third.integer(0));
+    {
+        const borrowed = try std.testing.allocator.dupe(u8, "borrowed");
+        defer std.testing.allocator.free(borrowed);
+        var value = try Statement.init(t.db.writer, "SELECT ?", &.{text(borrowed)});
+        defer value.deinit();
+        try std.testing.expect(try value.next());
+        try std.testing.expectEqualStrings("borrowed", value.bytes(0));
+    }
+    var nullable = try Statement.init(t.db.writer, "SELECT ?", &.{.null});
+    defer nullable.deinit();
+    try std.testing.expect(try nullable.next());
+    try std.testing.expectEqual(@as(c_int, c.SQLITE_NULL), c.sqlite3_column_type(nullable.raw, 0));
+}
+
+test "read snapshots retain old rows during writes and later reads see committed permissions" {
+    var t = try TestDatabase.init();
+    defer t.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = std.testing.io;
+    const lease = try t.db.acquire(io);
+    {
+        defer t.db.release(io, lease);
+        try readCall(io, t.db.readers[lease].conn, struct {
+            fn read(allocator: Allocator, reader: Conn, writer: Conn) !void {
+                const before = (try userIn(allocator, reader, 1)).?;
+                try std.testing.expectEqualStrings("David", before.name);
+                try exec(writer, "BEGIN IMMEDIATE", &.{});
+                errdefer rollback(writer);
+                try exec(writer, "UPDATE users SET name='Changed' WHERE id=1", &.{});
+                try exec(writer, "DELETE FROM memberships WHERE user_id=1 AND room_id=1", &.{});
+                try exec(writer, "COMMIT", &.{});
+                const during = (try userIn(allocator, reader, 1)).?;
+                try std.testing.expectEqualStrings("David", during.name);
+                try access(reader, 1, 1);
+            }
+        }.read, .{ a, t.db.readers[lease].conn, t.db.writer });
+    }
+    try std.testing.expectEqualStrings("Changed", (try t.db.findUser(a, io, 1)).?.name);
+    try std.testing.expectError(error.NotFound, t.db.roomPage(a, io, 1, 1, null));
+    try std.testing.expectError(error.NotFound, t.db.roomPage(a, io, 1, 999, null));
+    // A failed snapshot must release its connection and leave no transaction open.
+    try std.testing.expectEqualStrings("Changed", (try t.db.findUser(a, io, 1)).?.name);
+}
+
+test "session writes recover after a constraint and clear optional fields between reused bindings" {
+    var t = try TestDatabase.init();
+    defer t.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = std.testing.io;
+    const now = "2026-01-10 12:00:00";
+    _ = try t.db.createSession(a, io, 1, "duplicate", "127.0.0.1", "agent", now);
+    try std.testing.expectError(error.DatabaseConstraint, t.db.createSession(a, io, 1, "duplicate", null, null, now));
+    const created = try t.db.createSession(a, io, 2, "after-error", null, null, now);
+    try std.testing.expectEqual(@as(i64, 2), created.user.id);
+    try std.testing.expect(try exists(t.db.writer, "SELECT 1 FROM sessions WHERE token=? AND ip_address IS NULL AND user_agent IS NULL", &.{text("after-error")}));
+    try t.db.deleteSession(io, "duplicate");
+    try std.testing.expect((try t.db.findSession(a, io, "duplicate")) == null);
+    try std.testing.expectEqual(@as(i64, 2), (try t.db.findSession(a, io, "after-error")).?.user.id);
+}
+
+test "message pages hydrate distinct shared and absent attachments from their current snapshot" {
+    var t = try TestDatabase.init();
+    defer t.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = std.testing.io;
+    try exec(t.db.writer, "INSERT INTO messages(id,client_message_id,creator_id,room_id,created_at,updated_at) VALUES(1,'one',1,1,'2026-01-10 12:00:01','2026-01-10'),(2,'two',2,1,'2026-01-10 12:00:02','2026-01-10'),(3,'three',1,1,'2026-01-10 12:00:03','2026-01-10'),(4,'four',2,1,'2026-01-10 12:00:04','2026-01-10')", &.{});
+    try exec(t.db.writer, "INSERT INTO active_storage_attachments(record_type,record_id,name,blob_id,created_at) VALUES('Message',1,'attachment',1,'2026-01-10'),('Message',2,'attachment',2,'2026-01-10'),('Message',3,'attachment',1,'2026-01-10')", &.{});
+    const messages = try t.db.messagePage(a, io, 1, 1, null, null);
+    try std.testing.expectEqual(@as(usize, 4), messages.len);
+    try std.testing.expectEqual(@as(i64, 1), messages[0].attachment.?.id);
+    try std.testing.expectEqual(@as(i64, 2), messages[1].attachment.?.id);
+    try std.testing.expectEqual(@as(i64, 1), messages[2].attachment.?.id);
+    try std.testing.expect(messages[3].attachment == null);
+    const old_name = messages[0].attachment.?.filename;
+    try exec(t.db.writer, "UPDATE active_storage_blobs SET filename='changed.png' WHERE id=1", &.{});
+    const refreshed = try t.db.messagePage(a, io, 1, 1, null, null);
+    try std.testing.expectEqualStrings(old_name, messages[2].attachment.?.filename);
+    try std.testing.expectEqualStrings("changed.png", refreshed[0].attachment.?.filename);
+    try std.testing.expectEqualStrings("changed.png", refreshed[2].attachment.?.filename);
+    try std.testing.expect(refreshed[3].attachment == null);
 }
