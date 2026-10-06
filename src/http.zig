@@ -418,10 +418,10 @@ fn finish(r: *Request, original: Reply) !void {
     var reply = original;
     var entity = reply.body;
     var tag = reply.etag;
-    if (tag == null and reply.status == 200 and reply.conditional) {
-        var digest: [16]u8 = undefined;
-        std.crypto.hash.Md5.hash(entity, &digest, .{});
-        tag = try std.fmt.allocPrint(r.allocator, "W/\"{x}\"", .{&digest});
+    if (tag == null and reply.last_modified == null and entity.len != 0 and (reply.status == 200 or reply.status == 201) and reply.conditional) {
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(entity, &digest, .{});
+        tag = try std.fmt.allocPrint(r.allocator, "W/\"{x}\"", .{digest[0..16]});
     }
     if (r.get() and reply.status == 200 and reply.conditional) {
         const fresh = if (r.raw.header("if-none-match")) |given| if (tag) |etag| etagMatches(given, etag) else false else if (r.raw.header("if-modified-since")) |given| if (reply.last_modified) |modified| std.mem.eql(u8, given, try httpDate(r.allocator, modified)) else false else false;
@@ -447,8 +447,10 @@ fn finish(r: *Request, original: Reply) !void {
 fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]const u8, tag: ?[]const u8) !void {
     var header = Io.Writer.Allocating.init(r.allocator);
     try header.writer.print("HTTP/1.1 {d} {s}\r\n", .{ reply.status, reason(reply.status) });
-    try header.writer.print("Content-Type: {s}\r\n", .{reply.content_type});
-    try header.writer.print("Content-Length: {d}\r\n", .{reply.content_length orelse entity.len});
+    if (reply.status != 204 and reply.status != 304) {
+        try header.writer.print("Content-Type: {s}\r\n", .{reply.content_type});
+        try header.writer.print("Content-Length: {d}\r\n", .{reply.content_length orelse entity.len});
+    }
     try header.writer.print("Date: {s}\r\n", .{try httpDate(r.allocator, r.now_unix)});
     try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
     if (reply.cache_control) |cache| try header.writer.print("Cache-Control: {s}\r\n", .{cache});

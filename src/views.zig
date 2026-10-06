@@ -81,7 +81,7 @@ fn initials(a: Allocator, name: []const u8) ![]const u8 {
     var it = (try std.unicode.Utf8View.init(name)).iterator();
     var previous_word = false;
     while (it.nextCodepoint()) |c| {
-        if (c < 128 and (std.ascii.isAlphanumeric(@intCast(c)) or c == '_') and !previous_word) try out.writer.writeByte(@intCast(c));
+        if (c < 128 and (std.ascii.isAlphanumeric(@intCast(c)) or c == '_') and !previous_word) try out.writer.writeByte(std.ascii.toUpper(@intCast(c)));
         previous_word = unicode.alphanumeric(c) or c == '_';
     }
     return out.toOwnedSlice();

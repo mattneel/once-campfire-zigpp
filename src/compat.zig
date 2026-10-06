@@ -60,13 +60,13 @@ pub const Secrets = struct {
     pub fn verifyCookieValue(self: *const Secrets, allocator: Allocator, name: []const u8, raw_wire_value: []const u8, now_unix: i64) !?Value {
         const raw = try cookieUnescape(allocator, raw_wire_value);
         defer allocator.free(raw);
-        const bytes = verifySignature(allocator, raw, &self.cookie_key, .sha1) catch |err| return invalidOrError(err);
+        const bytes = verifySignature(allocator, raw, &self.cookie_key, .sha1) catch |err| return invalidOrError(Value, err);
         defer allocator.free(bytes);
         const purpose = try std.fmt.allocPrint(allocator, "cookie.{s}", .{name});
         defer allocator.free(purpose);
-        const dumped = cookieDump(allocator, bytes, purpose, now_unix, false) catch |err| return invalidOrError(err);
+        const dumped = cookieDump(allocator, bytes, purpose, now_unix, false) catch |err| return invalidOrError(Value, err);
         defer allocator.free(dumped);
-        return parseValue(allocator, dumped) catch |err| return invalidOrError(err);
+        return parseValue(allocator, dumped) catch |err| return invalidOrError(Value, err);
     }
 
     pub fn encryptCookie(self: *const Secrets, allocator: Allocator, io: Io, name: []const u8, value: Value, expires_unix: ?i64) ![]const u8 {
@@ -103,11 +103,11 @@ pub const Secrets = struct {
         const iv_start = tag_start - 18;
         const cipher_end = iv_start - 2;
         if (!std.mem.eql(u8, raw[tag_start - 2 .. tag_start], "--") or !std.mem.eql(u8, raw[cipher_end..iv_start], "--")) return null;
-        const cipher = base64DecodeStrict(allocator, raw[0..cipher_end]) catch |err| return invalidOrError(err);
+        const cipher = base64DecodeStrict(allocator, raw[0..cipher_end]) catch |err| return invalidOrError(Value, err);
         defer allocator.free(cipher);
-        const iv = base64DecodeStrict(allocator, raw[iv_start .. tag_start - 2]) catch |err| return invalidOrError(err);
+        const iv = base64DecodeStrict(allocator, raw[iv_start .. tag_start - 2]) catch |err| return invalidOrError(Value, err);
         defer allocator.free(iv);
-        const tag = base64DecodeStrict(allocator, raw[tag_start..]) catch |err| return invalidOrError(err);
+        const tag = base64DecodeStrict(allocator, raw[tag_start..]) catch |err| return invalidOrError(Value, err);
         defer allocator.free(tag);
         if (iv.len != 12 or tag.len != 16) return null;
         const plaintext = try allocator.alloc(u8, cipher.len);
@@ -115,9 +115,9 @@ pub const Secrets = struct {
         Gcm.decrypt(plaintext, cipher, tag[0..16].*, "", iv[0..12].*, self.encrypted_key) catch return null;
         const purpose = try std.fmt.allocPrint(allocator, "cookie.{s}", .{name});
         defer allocator.free(purpose);
-        const dumped = cookieDump(allocator, plaintext, purpose, now_unix, true) catch |err| return invalidOrError(err);
+        const dumped = cookieDump(allocator, plaintext, purpose, now_unix, true) catch |err| return invalidOrError(Value, err);
         defer allocator.free(dumped);
-        return parseValue(allocator, dumped) catch |err| return invalidOrError(err);
+        return parseValue(allocator, dumped) catch |err| return invalidOrError(Value, err);
     }
 
     pub fn signedStream(self: *const Secrets, allocator: Allocator, pieces: []const []const u8) ![]const u8 {
@@ -138,8 +138,8 @@ pub const Secrets = struct {
         defer arena.deinit();
         const a = arena.allocator();
         const v = verifyValue(a, value, purpose, now_unix, &self.id_key, .sha256, true) catch |err| switch (err) {
-            error.InvalidSignature, error.InvalidMessage => verifyValue(a, value, purpose, now_unix, &self.id_key, .sha1, true) catch |fallback| return invalidOrError(fallback),
-            else => return invalidOrError(err),
+            error.InvalidSignature, error.InvalidMessage => verifyValue(a, value, purpose, now_unix, &self.id_key, .sha1, true) catch |fallback| return invalidOrError(i64, fallback),
+            else => return invalidOrError(i64, err),
         };
         return integer(v);
     }
@@ -157,7 +157,7 @@ pub const Secrets = struct {
     pub fn verifyBlobSignedId(self: *const Secrets, allocator: Allocator, value: []const u8, now_unix: i64) !?i64 {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
-        const v = verifyValue(arena.allocator(), value, "blob_id", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(err);
+        const v = verifyValue(arena.allocator(), value, "blob_id", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(i64, err);
         return integer(v);
     }
     /// Caller supplies compact ActiveSupport JSON in its original insertion order.
@@ -169,7 +169,7 @@ pub const Secrets = struct {
     pub fn verifyVariationKey(self: *const Secrets, allocator: Allocator, key: []const u8, now_unix: i64) !?[]const u8 {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
-        const v = verifyValue(arena.allocator(), key, "variation", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(err);
+        const v = verifyValue(arena.allocator(), key, "variation", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError([]const u8, err);
         return try jsonEncode(allocator, v, true);
     }
     pub fn signDiskKey(self: *const Secrets, allocator: Allocator, ordered_compact_json: []const u8, expires_unix: i64) ![]const u8 {
@@ -180,7 +180,7 @@ pub const Secrets = struct {
     pub fn verifyDiskKey(self: *const Secrets, allocator: Allocator, key: []const u8, now_unix: i64) !?[]const u8 {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
-        const v = verifyValue(arena.allocator(), key, "blob_key", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError(err);
+        const v = verifyValue(arena.allocator(), key, "blob_key", now_unix, &self.storage_key, .sha1, true) catch |err| return invalidOrError([]const u8, err);
         return try jsonEncode(allocator, v, true);
     }
     pub fn attachableSgid(self: *const Secrets, allocator: Allocator, model_name: []const u8, id: i64) ![]const u8 {
@@ -194,7 +194,7 @@ pub const Secrets = struct {
         const a = arena.allocator();
         const v = verifyValue(a, value, purpose, now_unix, &self.global_key, .sha1, true) catch |err| blk: {
             if (err == error.OutOfMemory) return err;
-            const legacy = verifyValue(a, value, null, now_unix, &self.global_key, .sha1, true) catch |fallback| return invalidOrError(fallback);
+            const legacy = verifyValue(a, value, null, now_unix, &self.global_key, .sha1, true) catch |fallback| return invalidOrError(GlobalId, fallback);
             if (legacy != .object or !purposeMatches(legacy.object.get("purpose"), purpose)) return null;
             if (legacy.object.get("expires_at")) |exp| {
                 if (exp != .null) {
@@ -207,7 +207,7 @@ pub const Secrets = struct {
         };
         if (v != .string) return null;
         const gid = parseGlobalId(v.string) orelse blk: {
-            const decoded = base64Decode(a, v.string) catch |err| return invalidOrError(err);
+            const decoded = base64Decode(a, v.string) catch |err| return invalidOrError(GlobalId, err);
             break :blk parseGlobalId(decoded) orelse return null;
         };
         return .{ .app = try allocator.dupe(u8, gid.app), .model_name = try allocator.dupe(u8, gid.model_name), .id = try allocator.dupe(u8, gid.id) };
@@ -233,7 +233,7 @@ pub fn globalIdParam(allocator: Allocator, model_name: []const u8, id: i64) ![]c
 fn derive(key: []u8, secret: []const u8, salt: []const u8) !void {
     try std.crypto.pwhash.pbkdf2(key, secret, salt, 1000, Sha256);
 }
-fn invalidOrError(err: anyerror) error{OutOfMemory}!@TypeOf(null) {
+fn invalidOrError(comptime T: type, err: anyerror) error{OutOfMemory}!?T {
     if (err == error.OutOfMemory) return error.OutOfMemory;
     return null;
 }

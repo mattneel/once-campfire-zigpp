@@ -99,7 +99,7 @@ pub fn write(writer: *std.Io.Writer, t: Instant, precision: usize, database: boo
     const m = mp + @as(i64, if (mp < 10) 3 else -9);
     if (m <= 2) y += 1;
     if (y < 0 or y > 9999) return error.InvalidTimestamp;
-    try writer.print("{d:0>4}-{d:0>2}-{d:0>2}{c}{d:0>2}:{d:0>2}:{d:0>2}", .{ y, m, d, @as(u8, if (database) ' ' else 'T'), @divTrunc(sod, 3600), @divTrunc(@mod(sod, 3600), 60), @mod(sod, 60) });
+    try writer.print("{d:0>4}-{d:0>2}-{d:0>2}{c}{d:0>2}:{d:0>2}:{d:0>2}", .{ @as(u16, @intCast(y)), @as(u8, @intCast(m)), @as(u8, @intCast(d)), @as(u8, if (database) ' ' else 'T'), @as(u8, @intCast(@divTrunc(sod, 3600))), @as(u8, @intCast(@divTrunc(@mod(sod, 3600), 60))), @as(u8, @intCast(@mod(sod, 60))) });
     if (precision > 0) {
         var fraction: [9]u8 = undefined;
         _ = try std.fmt.bufPrint(&fraction, "{d:0>9}", .{t.nanos});

@@ -86,9 +86,9 @@ pub const Storage = struct {
         if (std.mem.eql(u8, family, "disk")) {
             const token = segments.next() orelse return notFound();
             if (segments.next() == null) return notFound();
-            const decoded = wire.decodeSegment(allocator, token) catch |err| return invalidOrError(err);
+            const decoded = wire.decodeSegment(allocator, token) catch |err| return try invalidOrError(err);
             const json = try self.secrets.verifyDiskKey(allocator, decoded, request.now) orelse return notFound();
-            const parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{ .allocate = .alloc_always }) catch |err| return invalidOrError(err);
+            const parsed = std.json.parseFromSlice(std.json.Value, allocator, json, .{ .allocate = .alloc_always }) catch |err| return try invalidOrError(err);
             defer parsed.deinit();
             if (parsed.value != .object) return notFound();
             const key = jsonString(parsed.value, "key") orelse return notFound();
@@ -104,15 +104,15 @@ pub const Storage = struct {
         const redirect = std.mem.eql(u8, action, "redirect");
         if (!redirect and !std.mem.eql(u8, action, "proxy")) return notFound();
         const signed = segments.next() orelse return notFound();
-        const decoded_id = wire.decodeSegment(allocator, signed) catch |err| return invalidOrError(err);
+        const decoded_id = wire.decodeSegment(allocator, signed) catch |err| return try invalidOrError(err);
         const id = try self.secrets.verifyBlobSignedId(allocator, decoded_id, request.now) orelse return notFound();
         var blob = try self.database.blob(allocator, io, id) orelse return notFound();
         if (!media.validKey(blob.key)) return notFound();
         if (is_representation) {
             const raw_variation = segments.next() orelse return notFound();
-            const key = wire.decodeSegment(allocator, raw_variation) catch |err| return invalidOrError(err);
+            const key = wire.decodeSegment(allocator, raw_variation) catch |err| return try invalidOrError(err);
             const json = try self.secrets.verifyVariationKey(allocator, key, request.now) orelse return notFound();
-            const variation = Variation.decode(allocator, json, defaultVariantFormat(blob)) catch |err| return invalidOrError(err);
+            const variation = Variation.decode(allocator, json, defaultVariantFormat(blob)) catch |err| return try invalidOrError(err);
             blob = self.representation(allocator, io, blob, variation, request.now) catch |err| switch (err) {
                 error.Unrepresentable, error.FileNotFound, error.UnsafeStorageKey => return notFound(),
                 else => return err,

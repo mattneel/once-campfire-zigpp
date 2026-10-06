@@ -493,7 +493,7 @@ const Statement = struct {
     }
     fn nullable(s: *Statement, allocator: Allocator, column: c_int) !?[]const u8 {
         if (c.sqlite3_column_type(s.raw, column) == c.SQLITE_NULL) return null;
-        return s.string(allocator, column);
+        return try s.string(allocator, column);
     }
 };
 
@@ -559,7 +559,7 @@ fn firstAdministrator(allocator: Allocator, conn: Conn) !?model.User {
     var s = try Statement.init(conn, "SELECT " ++ user_columns ++ " FROM users u WHERE u.role=1 ORDER BY u.id ASC LIMIT 1", &.{});
     defer s.deinit();
     if (!try s.next()) return null;
-    return readUser(allocator, conn, &s, 0);
+    return try readUser(allocator, conn, &s, 0);
 }
 fn readUser(allocator: Allocator, conn: Conn, s: *Statement, offset: c_int) !model.User {
     const id = s.integer(offset);
@@ -569,7 +569,7 @@ fn userWhere(allocator: Allocator, conn: Conn, comptime clause: []const u8, valu
     var s = try Statement.init(conn, "SELECT " ++ user_columns ++ " FROM users u WHERE " ++ clause ++ " LIMIT 1", values);
     defer s.deinit();
     if (!try s.next()) return null;
-    return readUser(allocator, conn, &s, 0);
+    return try readUser(allocator, conn, &s, 0);
 }
 fn userIn(allocator: Allocator, conn: Conn, id: i64) !?model.User {
     return userWhere(allocator, conn, "u.id=?", &.{int(id)});
@@ -608,7 +608,7 @@ fn roomWhere(allocator: Allocator, conn: Conn, user_id: i64, comptime clause: []
     var s = try Statement.init(conn, "SELECT " ++ room_columns ++ " FROM rooms r " ++ clause, values);
     defer s.deinit();
     if (!try s.next()) return null;
-    return readRoom(allocator, conn, &s, 0, user_id);
+    return try readRoom(allocator, conn, &s, 0, user_id);
 }
 fn visitedRoomIn(allocator: Allocator, conn: Conn, user_id: i64, last_room: ?i64) !?model.Room {
     try active(conn, user_id);
@@ -642,7 +642,7 @@ fn blobIn(allocator: Allocator, conn: Conn, id: i64) !?model.Blob {
     var s = try Statement.init(conn, "SELECT " ++ blob_columns ++ " FROM active_storage_blobs b WHERE b.id=? LIMIT 1", &.{int(id)});
     defer s.deinit();
     if (!try s.next()) return null;
-    return readBlob(allocator, &s);
+    return try readBlob(allocator, &s);
 }
 fn variantRecord(conn: Conn, blob_id: i64, digest: []const u8) !?i64 {
     var s = try Statement.init(conn, "SELECT id FROM active_storage_variant_records WHERE blob_id=? AND variation_digest=? LIMIT 1", &.{ int(blob_id), text(digest) });
@@ -654,7 +654,7 @@ fn attachedBlob(allocator: Allocator, conn: Conn, record_type: []const u8, id: i
     var s = try Statement.init(conn, "SELECT " ++ blob_columns ++ " FROM active_storage_attachments a JOIN active_storage_blobs b ON b.id=a.blob_id WHERE a.record_type=? AND a.record_id=? AND a.name=? LIMIT 1", &.{ text(record_type), int(id), text(name) });
     defer s.deinit();
     if (!try s.next()) return null;
-    return readBlob(allocator, &s);
+    return try readBlob(allocator, &s);
 }
 fn messageWhere(allocator: Allocator, conn: Conn, comptime clause: []const u8, values: []const Value, reverse: bool) ![]model.Message {
     var s = try Statement.init(conn, message_select ++ clause, values);
@@ -722,7 +722,7 @@ fn anchorTime(allocator: Allocator, conn: Conn, room_id: i64, id: i64) !?[]const
     var s = try Statement.init(conn, "SELECT created_at FROM messages WHERE room_id=? AND id=? LIMIT 1", &.{ int(room_id), int(id) });
     defer s.deinit();
     if (!try s.next()) return null;
-    return s.string(allocator, 0);
+    return try s.string(allocator, 0);
 }
 const Page = enum { last, before, after };
 fn pageIn(allocator: Allocator, conn: Conn, room_id: i64, page: Page, at: ?[]const u8) ![]model.Message {

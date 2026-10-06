@@ -196,9 +196,12 @@ fn fromJson(allocator: Allocator, value: std.json.Value, depth: usize) Error!Val
 }
 
 pub fn json(allocator: Allocator, text: []const u8) Error!Map {
-    const value = std.json.parseFromSlice(std.json.Value, allocator, text, .{ .allocate = .alloc_always }) catch return error.InvalidBody;
+    const value = std.json.parseFromSlice(std.json.Value, allocator, text, .{ .allocate = .alloc_always }) catch |err| return if (err == error.OutOfMemory) error.OutOfMemory else error.InvalidBody;
     const converted = try fromJson(allocator, value.value, 0);
-    return if (converted == .object) converted.object else error.InvalidBody;
+    if (converted == .object) return converted.object;
+    var root: Map = .{};
+    try root.entries.put(allocator, "_json", converted);
+    return root;
 }
 
 fn quotedParameter(header: []const u8, name: []const u8) ?[]const u8 {
@@ -272,6 +275,8 @@ test "arrays of parameter hashes reuse only absent keys and JSON deep munges nul
     try std.testing.expectEqualStrings("3", items[1].get("a").?.str().?);
     const parsed = try json(a, "{\"x\":[null,\"a\",null,\"b\"]}");
     try std.testing.expectEqual(@as(usize, 2), parsed.get("x").?.array.items.len);
+    const root_array = try json(a, "[null,\"body\"]");
+    try std.testing.expectEqualStrings("body", root_array.get("_json").?.array.items[0].str().?);
 }
 
 test "multipart text fields preserve message content and identify unsupported file assignment" {

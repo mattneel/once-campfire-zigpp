@@ -824,7 +824,7 @@ fn webUrl(ctx: Context, value: ?[]const u8) !?[]const u8 {
         alpha = true;
     };
     if (!alpha or std.ascii.eqlIgnoreCase(trimmed, std.mem.trimEnd(u8, ctx.host, "."))) return null;
-    return ctx.allocator.dupe(u8, url);
+    return try ctx.allocator.dupe(u8, url);
 }
 fn truncate(writer: *Writer, value: []const u8, limit: usize) !void {
     var iterator = (std.unicode.Utf8View.init(value) catch return error.InvalidUtf8).iterator();
