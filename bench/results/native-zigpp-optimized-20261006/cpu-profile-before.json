@@ -1,0 +1,264 @@
+{
+  "binary_sha256": "d27b7446b2223c6639abe3b5cc7fcab6c96260b6347210e4cd22f4df2b46a398",
+  "event": "cpu-clock",
+  "sample_frequency_hz": 499,
+  "server_cpus": [
+    8,
+    10,
+    12,
+    14
+  ],
+  "clients": 16,
+  "duration_seconds": 5,
+  "diagnostic_only_not_benchmark": true,
+  "symbols_from_exact_original_executable": true,
+  "kernel_and_external_symbols_may_be_unresolved": true,
+  "routes": [
+    {
+      "route": "room",
+      "lost_samples": 0,
+      "approx_event_count": 17777554968,
+      "symbols": [
+        {
+          "percent": 20.22,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.rebaseInner"
+        },
+        {
+          "percent": 17.44,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.matchAndAddHash"
+        },
+        {
+          "percent": 17.07,
+          "mode": ".",
+          "symbol": "compress.flate.Container.Hasher.update"
+        },
+        {
+          "percent": 9.03,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 5.34,
+          "mode": ".",
+          "symbol": "crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round"
+        },
+        {
+          "percent": 1.54,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 1.51,
+          "mode": "k",
+          "symbol": "0xffffffff9d5d8ccf"
+        },
+        {
+          "percent": 1.3,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.writeBlock"
+        },
+        {
+          "percent": 1.08,
+          "mode": ".",
+          "symbol": "compat.htmlEscape"
+        },
+        {
+          "percent": 0.72,
+          "mode": ".",
+          "symbol": "richtext.autoNode"
+        }
+      ]
+    },
+    {
+      "route": "sidebar",
+      "lost_samples": 0,
+      "approx_event_count": 12563126152,
+      "symbols": [
+        {
+          "percent": 14.5,
+          "mode": "k",
+          "symbol": "0xffffffff9d5d8ccf"
+        },
+        {
+          "percent": 7.02,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.matchAndAddHash"
+        },
+        {
+          "percent": 3.91,
+          "mode": "k",
+          "symbol": "0xffffffff9c3fceb0"
+        },
+        {
+          "percent": 3.06,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.rebaseInner"
+        },
+        {
+          "percent": 2.98,
+          "mode": ".",
+          "symbol": "compress.flate.Container.Hasher.update"
+        },
+        {
+          "percent": 1.72,
+          "mode": ".",
+          "symbol": "0x00000000000a1ba4"
+        },
+        {
+          "percent": 1.44,
+          "mode": ".",
+          "symbol": "0x00000000000a0125"
+        },
+        {
+          "percent": 1.31,
+          "mode": "k",
+          "symbol": "0xffffffff9d5c3cc5"
+        },
+        {
+          "percent": 1.24,
+          "mode": ".",
+          "symbol": "0x00000000000990b7"
+        },
+        {
+          "percent": 1.04,
+          "mode": ".",
+          "symbol": "0x0000000000099050"
+        },
+        {
+          "percent": 0.96,
+          "mode": ".",
+          "symbol": "crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round"
+        },
+        {
+          "percent": 0.89,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.writeBlock"
+        },
+        {
+          "percent": 0.88,
+          "mode": ".",
+          "symbol": "Thread.PosixThreadImpl.spawn__func_686.Instance.entryFn"
+        },
+        {
+          "percent": 0.8,
+          "mode": ".",
+          "symbol": "0x00000000000a00d7"
+        },
+        {
+          "percent": 0.61,
+          "mode": ".",
+          "symbol": "Io.Threadz.scheduler.Scheduler(Io.Uring).schedulingLoop"
+        },
+        {
+          "percent": 0.61,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 0.57,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 0.54,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.huffman.build"
+        }
+      ]
+    },
+    {
+      "route": "post",
+      "lost_samples": 0,
+      "approx_event_count": 7535070080,
+      "symbols": [
+        {
+          "percent": 13.03,
+          "mode": "k",
+          "symbol": "0xffffffff9d5d8ccf"
+        },
+        {
+          "percent": 3.94,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.matchAndAddHash"
+        },
+        {
+          "percent": 2.47,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.rebaseInner"
+        },
+        {
+          "percent": 2.29,
+          "mode": ".",
+          "symbol": "Thread.PosixThreadImpl.spawn__func_686.Instance.entryFn"
+        },
+        {
+          "percent": 2.21,
+          "mode": ".",
+          "symbol": "Io.Threadz.scheduler.Scheduler(Io.Uring).schedulingLoop"
+        },
+        {
+          "percent": 2.1,
+          "mode": "k",
+          "symbol": "0xffffffff9c3fceb0"
+        },
+        {
+          "percent": 1.65,
+          "mode": ".",
+          "symbol": "compress.flate.Container.Hasher.update"
+        },
+        {
+          "percent": 1.25,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.huffman.build"
+        },
+        {
+          "percent": 1.04,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 1.01,
+          "mode": ".",
+          "symbol": "compress.flate.Compress.writeBlock"
+        },
+        {
+          "percent": 0.77,
+          "mode": ".",
+          "symbol": "crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round"
+        },
+        {
+          "percent": 0.69,
+          "mode": "k",
+          "symbol": "0xffffffff9d5c379c"
+        },
+        {
+          "percent": 0.64,
+          "mode": ".",
+          "symbol": "tcp.http1.request.Request.header"
+        },
+        {
+          "percent": 0.59,
+          "mode": ".",
+          "symbol": "0x00000000000a1ba4"
+        },
+        {
+          "percent": 0.56,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 0.56,
+          "mode": "k",
+          "symbol": "0xffffffff9d5c3cc5"
+        },
+        {
+          "percent": 0.56,
+          "mode": ".",
+          "symbol": "0x00000000000a0125"
+        }
+      ]
+    }
+  ]
+}

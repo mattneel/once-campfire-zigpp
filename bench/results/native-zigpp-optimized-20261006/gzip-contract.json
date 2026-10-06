@@ -1,0 +1,217 @@
+{
+  "cached_gzip_smoke_passed": true,
+  "cross_user_warm_cache_dom_equal": true,
+  "warm_full_frame_and_host_dom_equal": true,
+  "record_version_change_visible_on_room_and_search": true,
+  "warm_membership_and_session_revocation_enforced": true,
+  "real_post_persistence_search_and_dom_equal": true,
+  "whole_campfire_suite_passed": false,
+  "reads": [
+    {
+      "route": "room",
+      "target": "native",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 416514,
+        "decoded_bytes": 416514
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 24171,
+        "decoded_bytes": 416514
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 24171,
+        "decoded_bytes": 416514
+      },
+      "content_equal": true
+    },
+    {
+      "route": "room",
+      "target": "rust",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 416353,
+        "decoded_bytes": 416353
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 24290,
+        "decoded_bytes": 416353
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 24290,
+        "decoded_bytes": 416353
+      },
+      "content_equal": true
+    },
+    {
+      "route": "messages",
+      "target": "native",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 384164,
+        "decoded_bytes": 384164
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 16086,
+        "decoded_bytes": 384164
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 16086,
+        "decoded_bytes": 384164
+      },
+      "content_equal": true
+    },
+    {
+      "route": "messages",
+      "target": "rust",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 383844,
+        "decoded_bytes": 383844
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 16158,
+        "decoded_bytes": 383844
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 16158,
+        "decoded_bytes": 383844
+      },
+      "content_equal": true
+    },
+    {
+      "route": "sidebar",
+      "target": "native",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 29712,
+        "decoded_bytes": 29712
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 5872,
+        "decoded_bytes": 29712
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 5872,
+        "decoded_bytes": 29712
+      },
+      "content_equal": true
+    },
+    {
+      "route": "sidebar",
+      "target": "rust",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 30763,
+        "decoded_bytes": 30763
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 5910,
+        "decoded_bytes": 30763
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 5910,
+        "decoded_bytes": 30763
+      },
+      "content_equal": true
+    },
+    {
+      "route": "search",
+      "target": "native",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 149532,
+        "decoded_bytes": 149532
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 9597,
+        "decoded_bytes": 149532
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 9597,
+        "decoded_bytes": 149532
+      },
+      "content_equal": true
+    },
+    {
+      "route": "search",
+      "target": "rust",
+      "identity": {
+        "status": 200,
+        "coding": null,
+        "wire_bytes": 149623,
+        "decoded_bytes": 149623
+      },
+      "gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 9766,
+        "decoded_bytes": 149623
+      },
+      "warm_gzip": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 9766,
+        "decoded_bytes": 149623
+      },
+      "content_equal": true
+    }
+  ],
+  "post": [
+    {
+      "target": "native",
+      "wire": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 2062,
+        "decoded_bytes": 9828
+      },
+      "message_id": 933434640
+    },
+    {
+      "target": "rust",
+      "wire": {
+        "status": 200,
+        "coding": "gzip",
+        "wire_bytes": 2025,
+        "decoded_bytes": 9819
+      },
+      "message_id": 933434640
+    }
+  ]
+}

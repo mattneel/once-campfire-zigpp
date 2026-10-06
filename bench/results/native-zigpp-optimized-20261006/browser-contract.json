@@ -1,0 +1,28 @@
+{
+  "browser": "real Chromium",
+  "nativeBinarySha256": "72159985b78a8f3681e77c7ffd249201661d46471bf40a08dd962cc878a4192c",
+  "base": "http://127.0.0.1:4410",
+  "login": true,
+  "sidebarRoomNavigation": [
+    "All Pets",
+    "All Talk"
+  ],
+  "pagination": {
+    "before": 40,
+    "after": 80,
+    "first": "933434561",
+    "last": "136976342"
+  },
+  "browserOriginHttpPost": {
+    "status": 200,
+    "contentType": "text/vnd.turbo-stream.html; charset=utf-8",
+    "turboAppend": true,
+    "containsMarker": true,
+    "messageId": 933434641
+  },
+  "persistedReloadContainsMarker": true,
+  "uiSearchReadbackMessageId": 933434641,
+  "composerSendSupported": false,
+  "composerDisabledBecauseCableMissing": true,
+  "wholeCampfireSuitePassed": false
+}

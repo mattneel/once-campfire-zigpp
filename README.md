@@ -164,6 +164,47 @@ bench/attrib --configs native-rust,native-zigpp \
 Choose equivalent disjoint CPU sets on a different host. Stop acceptance servers and browser
 activity first; do not compile or run the conformance suite while timing.
 
+## Native optimized measurement — same batch, reference drift
+
+Native source `8e9e777`, measured on the same host and CPU sets as above: four server hardware
+threads, 16 clients, three interleaved repetitions, eight seconds per workload, gzip, no User-Agent,
+fresh isolated seeds. The Rust executable and load-generator fingerprints are unchanged.
+
+**Interpretation limit:** the Rust control delivered only **35–39% of its earlier throughput**
+despite identical recorded runner settings. The cause is not established. These are within-batch
+comparisons, **not a controlled native before/after speedup or a stable leaderboard result**.
+They remain incomparable with the published DHH hardware/table.
+
+| HTTP workload | Rust req/s | Zig++ req/s | Zig++ / Rust | Zig++ p99 ms |
+|---|---:|---:|---:|---:|
+| Room page | 5,336.5 | 7,547.8 | 1.41× | 4.399 |
+| Messages page | 5,673.4 | 12,153.1 | 2.14× | 2.567 |
+| Sidebar | 4,893.5 | 6,874.1 | 1.40× | 5.619 |
+| Search | 6,243.9 | 4,522.4 | 0.72× | 7.435 |
+| Post a message | 1,364.6 | 1,301.3 | 0.95× | 29.583 |
+
+Cells are medians. Native search and POST still trail the reference in this batch. POST still
+omits broadcast, push/jobs and webhook delivery; it is not complete-application POST parity.
+
+The measured binary passed both native I/O-backend suites, all ten unchanged live conformance
+scenarios, cold/warm gzip versus identity and Rust DOM checks, host/frame/user cache isolation,
+record-version change and warmed membership/session revocation. Real Chromium exercised login,
+room navigation, 40→80 pagination, authenticated HTTP POST, persisted reload and UI search.
+The composer Send button remains disabled without Cable.
+
+All **1,323,179 measured responses** were HTTP 200 with zero transport errors across 30 scenarios.
+The final native database retained **12,103** benchmark messages (including warmup), each with a
+distinct client ID, persisted ActionText and matching FTS plain text. CPU profiles are diagnostic
+samples, not instrumented throughput claims.
+
+[Raw runs, latency/CPU ranges and interpretation warning](bench/results/native-zigpp-optimized-20261006/report.md),
+[binary fingerprints and verification provenance](bench/results/native-zigpp-optimized-20261006/verification.json),
+[unchanged live gate](bench/results/native-zigpp-optimized-20261006/native-contract.json),
+[warm-cache consumer checks](bench/results/native-zigpp-optimized-20261006/gzip-contract.json),
+[Chromium report](bench/results/native-zigpp-optimized-20261006/browser-contract.json),
+[room screenshot](bench/results/native-zigpp-optimized-20261006/native-room.webp) and
+[search screenshot](bench/results/native-zigpp-optimized-20261006/native-search.webp).
+
 ## Rust baseline
 
 A Rust implementation of [ONCE Campfire](https://github.com/basecamp/once-campfire). It uses the

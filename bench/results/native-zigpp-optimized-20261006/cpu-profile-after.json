@@ -1,0 +1,462 @@
+{
+  "binary_sha256": "72159985b78a8f3681e77c7ffd249201661d46471bf40a08dd962cc878a4192c",
+  "event": "cpu-clock",
+  "sample_frequency_hz": 499,
+  "server_cpus": [
+    8,
+    10,
+    12,
+    14
+  ],
+  "clients": 16,
+  "duration_seconds": 5,
+  "diagnostic_only_not_benchmark": true,
+  "routes": [
+    {
+      "route": "room",
+      "lost_samples": 0,
+      "approx_event_count": 18156312480,
+      "symbols": [
+        {
+          "percent": 8.28,
+          "mode": "k",
+          "symbol": "_raw_spin_unlock_irqrestore"
+        },
+        {
+          "percent": 7.48,
+          "mode": ".",
+          "symbol": "sqlite3VdbeExec"
+        },
+        {
+          "percent": 3.91,
+          "mode": ".",
+          "symbol": "compiler_rt.bcmp"
+        },
+        {
+          "percent": 3.48,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 3.4,
+          "mode": ".",
+          "symbol": "crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round"
+        },
+        {
+          "percent": 2.66,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 2.17,
+          "mode": ".",
+          "symbol": "sqlite3BtreeTableMoveto"
+        },
+        {
+          "percent": 1.77,
+          "mode": ".",
+          "symbol": "pthread_mutex_lock@@GLIBC_2.2.5"
+        },
+        {
+          "percent": 1.49,
+          "mode": ".",
+          "symbol": "http.finish"
+        },
+        {
+          "percent": 1.49,
+          "mode": ".",
+          "symbol": "tcp.http1.request.Request.header"
+        },
+        {
+          "percent": 1.46,
+          "mode": ".",
+          "symbol": "heap.ArenaAllocator.alloc"
+        },
+        {
+          "percent": 1.2,
+          "mode": ".",
+          "symbol": "hash.wyhash.Wyhash.hash"
+        },
+        {
+          "percent": 1.15,
+          "mode": ".",
+          "symbol": "pthread_mutex_unlock@@GLIBC_2.2.5"
+        },
+        {
+          "percent": 1.13,
+          "mode": "k",
+          "symbol": "do_syscall_64"
+        },
+        {
+          "percent": 1.1,
+          "mode": ".",
+          "symbol": "sqlite3BtreeIndexMoveto"
+        },
+        {
+          "percent": 1,
+          "mode": ".",
+          "symbol": "sqlite3VdbeRecordCompareWithSkip"
+        },
+        {
+          "percent": 0.96,
+          "mode": ".",
+          "symbol": "compat.htmlEscape"
+        },
+        {
+          "percent": 0.96,
+          "mode": ".",
+          "symbol": "db.pageIn"
+        },
+        {
+          "percent": 0.94,
+          "mode": "k",
+          "symbol": "finish_task_switch"
+        },
+        {
+          "percent": 0.94,
+          "mode": ".",
+          "symbol": "sqlite3GetVarint"
+        },
+        {
+          "percent": 0.91,
+          "mode": "k",
+          "symbol": "nft_do_chain"
+        },
+        {
+          "percent": 0.89,
+          "mode": ".",
+          "symbol": "Io.Threadz.scheduler.Scheduler(Io.Uring).schedulingLoop"
+        },
+        {
+          "percent": 0.77,
+          "mode": ".",
+          "symbol": "views.fragment_cache.FragmentCache.get"
+        },
+        {
+          "percent": 0.68,
+          "mode": ".",
+          "symbol": "__memcmp_evex_movbe"
+        },
+        {
+          "percent": 0.63,
+          "mode": ".",
+          "symbol": "compiler_rt.strlen"
+        },
+        {
+          "percent": 0.61,
+          "mode": ".",
+          "symbol": "__GI___lll_lock_wait"
+        },
+        {
+          "percent": 0.58,
+          "mode": ".",
+          "symbol": "__memmove_avx512_unaligned_erms"
+        },
+        {
+          "percent": 0.58,
+          "mode": "k",
+          "symbol": "futex_wake"
+        },
+        {
+          "percent": 0.57,
+          "mode": ".",
+          "symbol": "sqlite3_column_bytes"
+        },
+        {
+          "percent": 0.52,
+          "mode": ".",
+          "symbol": "views.asset"
+        }
+      ]
+    },
+    {
+      "route": "sidebar",
+      "lost_samples": 0,
+      "approx_event_count": 17058116096,
+      "symbols": [
+        {
+          "percent": 10.89,
+          "mode": "k",
+          "symbol": "_raw_spin_unlock_irqrestore"
+        },
+        {
+          "percent": 6.39,
+          "mode": ".",
+          "symbol": "sqlite3VdbeExec"
+        },
+        {
+          "percent": 3.63,
+          "mode": ".",
+          "symbol": "pthread_mutex_lock@@GLIBC_2.2.5"
+        },
+        {
+          "percent": 3.54,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 3.14,
+          "mode": ".",
+          "symbol": "compiler_rt.bcmp"
+        },
+        {
+          "percent": 2.46,
+          "mode": "k",
+          "symbol": "do_syscall_64"
+        },
+        {
+          "percent": 2.33,
+          "mode": ".",
+          "symbol": "pthread_mutex_unlock@@GLIBC_2.2.5"
+        },
+        {
+          "percent": 2.08,
+          "mode": ".",
+          "symbol": "__GI___lll_lock_wait"
+        },
+        {
+          "percent": 2.01,
+          "mode": "k",
+          "symbol": "finish_task_switch"
+        },
+        {
+          "percent": 1.83,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 1.61,
+          "mode": ".",
+          "symbol": "heap.ArenaAllocator.alloc"
+        },
+        {
+          "percent": 1.37,
+          "mode": "k",
+          "symbol": "futex_hash"
+        },
+        {
+          "percent": 1.35,
+          "mode": "k",
+          "symbol": "futex_wake"
+        },
+        {
+          "percent": 1.28,
+          "mode": ".",
+          "symbol": "__GI___lll_lock_wake"
+        },
+        {
+          "percent": 1.23,
+          "mode": ".",
+          "symbol": "tcp.http1.request.Request.header"
+        },
+        {
+          "percent": 1.05,
+          "mode": ".",
+          "symbol": "hash.wyhash.Wyhash.hash"
+        },
+        {
+          "percent": 1.03,
+          "mode": ".",
+          "symbol": "compat.htmlEscape"
+        },
+        {
+          "percent": 0.89,
+          "mode": "k",
+          "symbol": "__pv_queued_spin_lock_slowpath"
+        },
+        {
+          "percent": 0.89,
+          "mode": ".",
+          "symbol": "sqlite3BtreeTableMoveto"
+        },
+        {
+          "percent": 0.87,
+          "mode": ".",
+          "symbol": "compiler_rt.strlen"
+        },
+        {
+          "percent": 0.8,
+          "mode": "k",
+          "symbol": "futex_wait_setup"
+        },
+        {
+          "percent": 0.74,
+          "mode": "k",
+          "symbol": "nft_do_chain"
+        },
+        {
+          "percent": 0.67,
+          "mode": ".",
+          "symbol": "__memmove_avx512_unaligned_erms"
+        },
+        {
+          "percent": 0.62,
+          "mode": ".",
+          "symbol": "sqlite3_step"
+        },
+        {
+          "percent": 0.58,
+          "mode": "k",
+          "symbol": "do_futex"
+        },
+        {
+          "percent": 0.56,
+          "mode": "k",
+          "symbol": "__futex_wait"
+        },
+        {
+          "percent": 0.56,
+          "mode": "k",
+          "symbol": "__se_sys_futex"
+        },
+        {
+          "percent": 0.55,
+          "mode": ".",
+          "symbol": "malloc"
+        },
+        {
+          "percent": 0.54,
+          "mode": ".",
+          "symbol": "heap.ArenaAllocator.remap"
+        },
+        {
+          "percent": 0.53,
+          "mode": ".",
+          "symbol": "sqlite3_column_bytes"
+        },
+        {
+          "percent": 0.52,
+          "mode": ".",
+          "symbol": "views.asset"
+        },
+        {
+          "percent": 0.51,
+          "mode": ".",
+          "symbol": "db.Statement.init"
+        }
+      ]
+    },
+    {
+      "route": "post",
+      "lost_samples": 0,
+      "approx_event_count": 7250500944,
+      "symbols": [
+        {
+          "percent": 14.98,
+          "mode": "k",
+          "symbol": "_raw_spin_unlock_irqrestore"
+        },
+        {
+          "percent": 3.23,
+          "mode": ".",
+          "symbol": "views.fragment_cache.FragmentCache.put"
+        },
+        {
+          "percent": 3.01,
+          "mode": ".",
+          "symbol": "sqlite3VdbeExec"
+        },
+        {
+          "percent": 2.1,
+          "mode": ".",
+          "symbol": "0x00000000000023d7"
+        },
+        {
+          "percent": 1.88,
+          "mode": ".",
+          "symbol": "Io.Threadz.scheduler.Scheduler(Io.Uring).schedulingLoop"
+        },
+        {
+          "percent": 1.6,
+          "mode": ".",
+          "symbol": "Thread.PosixThreadImpl.spawn__func_688.Instance.entryFn"
+        },
+        {
+          "percent": 1.38,
+          "mode": ".",
+          "symbol": "_int_malloc"
+        },
+        {
+          "percent": 1.27,
+          "mode": ".",
+          "symbol": "crypto.sha2.Sha2x32(.{ 1779033703, 3144134277, 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225 },256).round"
+        },
+        {
+          "percent": 1.19,
+          "mode": "k",
+          "symbol": "prep_new_page"
+        },
+        {
+          "percent": 1.02,
+          "mode": ".",
+          "symbol": "compiler_rt.memcpy.memcpyFast"
+        },
+        {
+          "percent": 1,
+          "mode": "k",
+          "symbol": "finish_task_switch"
+        },
+        {
+          "percent": 0.97,
+          "mode": "k",
+          "symbol": "do_syscall_64"
+        },
+        {
+          "percent": 0.88,
+          "mode": ".",
+          "symbol": "deflateSetDictionary"
+        },
+        {
+          "percent": 0.83,
+          "mode": ".",
+          "symbol": "malloc"
+        },
+        {
+          "percent": 0.83,
+          "mode": ".",
+          "symbol": "tcp.http1.request.Request.header"
+        },
+        {
+          "percent": 0.75,
+          "mode": "k",
+          "symbol": "__pi_memcpy"
+        },
+        {
+          "percent": 0.72,
+          "mode": "k",
+          "symbol": "balance_dirty_pages_ratelimited_flags"
+        },
+        {
+          "percent": 0.66,
+          "mode": "k",
+          "symbol": "__fget_files"
+        },
+        {
+          "percent": 0.64,
+          "mode": ".",
+          "symbol": "os.linux.IoUring.enter"
+        },
+        {
+          "percent": 0.61,
+          "mode": ".",
+          "symbol": "pthread_mutex_lock@@GLIBC_2.2.5"
+        },
+        {
+          "percent": 0.58,
+          "mode": ".",
+          "symbol": "mem.eql__func_21"
+        },
+        {
+          "percent": 0.58,
+          "mode": "k",
+          "symbol": "posix_lock_inode.llvm.8814757874280714646"
+        },
+        {
+          "percent": 0.55,
+          "mode": "k",
+          "symbol": "mark_buffer_dirty"
+        }
+      ]
+    }
+  ]
+}
