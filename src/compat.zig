@@ -50,7 +50,7 @@ pub const Secrets = struct {
         defer allocator.free(metadata);
         const raw = try sign(allocator, metadata, &self.cookie_key, .sha1, .standard);
         defer allocator.free(raw);
-        return cookieEscape(allocator, raw);
+        return formEncode(allocator, raw);
     }
     pub fn verifyCookie(self: *const Secrets, allocator: Allocator, name: []const u8, raw_wire_value: []const u8, now_unix: i64) !?[]const u8 {
         const value = try self.verifyCookieValue(allocator, name, raw_wire_value, now_unix) orelse return null;
@@ -93,7 +93,7 @@ pub const Secrets = struct {
         defer allocator.free(t64);
         const raw = try std.fmt.allocPrint(allocator, "{s}--{s}--{s}", .{ c64, iv64, t64 });
         defer allocator.free(raw);
-        return cookieEscape(allocator, raw);
+        return formEncode(allocator, raw);
     }
     pub fn decryptCookie(self: *const Secrets, allocator: Allocator, name: []const u8, raw_wire_value: []const u8, now_unix: i64) !?Value {
         const raw = try cookieUnescape(allocator, raw_wire_value);
@@ -507,17 +507,17 @@ pub fn htmlEscape(writer: *Io.Writer, value: []const u8) !void {
 pub fn urlEncode(allocator: Allocator, value: []const u8) ![]const u8 {
     return percentEncode(allocator, value, false);
 }
-pub fn cookieEscape(allocator: Allocator, value: []const u8) ![]const u8 {
+pub fn formEncode(allocator: Allocator, value: []const u8) ![]const u8 {
     return percentEncode(allocator, value, true);
 }
-fn percentEncode(allocator: Allocator, value: []const u8, cookie: bool) ![]const u8 {
+fn percentEncode(allocator: Allocator, value: []const u8, form: bool) ![]const u8 {
     var out = Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     const hex = "0123456789ABCDEF";
     for (value) |c| {
-        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '.' or c == '_' or c == (if (cookie) @as(u8, '*') else @as(u8, '~'))) {
+        if (std.ascii.isAlphanumeric(c) or c == '-' or c == '.' or c == '_' or c == (if (form) @as(u8, '*') else @as(u8, '~'))) {
             try out.writer.writeByte(c);
-        } else if (cookie and c == ' ') try out.writer.writeByte('+') else {
+        } else if (form and c == ' ') try out.writer.writeByte('+') else {
             const escaped = [3]u8{ '%', hex[c >> 4], hex[c & 15] };
             try out.writer.writeAll(&escaped);
         }
@@ -594,6 +594,6 @@ test "native deterministic AES GCM generation matches Rails ciphertext vectors" 
         const expires = c.object.get("expires_at").?;
         const seconds: ?i64 = if (expires == .null) null else try unixSeconds(expires.string);
         const wire = try secrets.encryptCookieWithIv(a, c.object.get("name").?.string, c.object.get("value").?, seconds, iv[0..12].*);
-        try std.testing.expectEqualStrings(try cookieEscape(a, raw), wire);
+        try std.testing.expectEqualStrings(try formEncode(a, raw), wire);
     }
 }

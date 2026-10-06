@@ -1,4 +1,85 @@
-# Campfire in Rust
+# Campfire in native Zig++
+
+This branch adds a **leaderboard-first native Zig++ target**, not a complete application port.
+`zig-out/bin/campfire-zigpp` serves the five workloads below without invoking, linking or proxying
+the Rust application. The original Rust implementation remains here as the compatibility oracle.
+
+## Native stack and scope
+
+- Zig++ `0.17.0-dev.2469+zigpp.04926fc36`, `std.Io.Threadz`, and pinned
+  [Zix](https://github.com/mattneel/zix) HTTP/1 over Linux `io_uring`; four workers by default.
+- Existing SQLite schema and storage layout; pooled read transactions and a serialized writer.
+- Native Rails-compatible signing/encryption, real bcrypt login, session refresh/logout,
+  room membership checks and same-origin write policy.
+- Native full/frame room, message pagination, sidebar and reachable-only FTS search rendering;
+  actual Turbo message responses, persisted ActionText/plain text, room touch and unread callbacks.
+- Gumbo rich-text parsing/sanitization, Propshaft-compatible assets and import maps, and existing
+  Active Storage files/variants. Native transformations use libvips and FFmpeg.
+
+**Not implemented:** Action Cable/WebSocket delivery, push/jobs, upload creation, edit/delete/boost
+mutations, administration, TLS/ACME, and the remaining application screens. This is not a drop-in
+production replacement. Posting exercises real persistence and rendering but **omits broadcast,
+push and webhook delivery work**; its timing is not complete-app POST parity.
+
+The measured build requires Linux. On Debian/Ubuntu, install `pkg-config`, `libsqlite3-dev`,
+`libgumbo-dev`, `libvips-dev` and `ffmpeg`. This host uses libvips 8.15.1 / FFmpeg 6.1.1 rather than
+the reference's 8.16.1 / 7.1.5: generated-media byte parity is not claimed.
+
+## Native build and run
+
+Use the Zig++ compiler, not stock Zig. Set `ZIG_LIB_DIR` to its matching SDK when the compiler
+installation does not locate it automatically.
+
+```sh
+ZIG_ANY=off zig build -Doptimize=ReleaseFast
+ZIG_ANY=off zig build test -- --io=threadz
+ZIG_ANY=off zig build test -- --io=threaded
+
+# Canonical reference fixtures; generation requires Docker.
+parity/bin/reference build
+parity/bin/seed build default
+
+# Always run against an isolated writable copy, never the canonical fixture database.
+storage="$(mktemp -d)"
+cp -a parity/.seed/default/db "$storage/db"
+cp -a parity/.seed/default/storage "$storage/files"
+set -a
+. parity/.env.reference
+set +a
+CAMPFIRE_STORAGE_PATH="$storage" DISABLE_SSL=1 HTTP_PORT=4410 \
+  CAMPFIRE_WORKERS=4 zig-out/bin/campfire-zigpp server
+```
+
+Fixture login: `david@37signals.com` / `secret123456`. `--help` lists the native environment
+settings. `SECRET_KEY_BASE` must match the original installation. `CAMPFIRE_ASSET_ROOT` overrides
+the build-time source root; keep `reference/`, `vendor/` and the port-owned asset files available.
+
+## Native conformance
+
+The native module suite consumes existing compatibility vectors and exercises actual SQLite,
+rich-text, assets and media behavior. `parity/native-contract.py` additionally compares live native
+and Rust responses/state against source-anchored five-path contracts: authentication, access,
+full/frame DOM, exact pagination, sidebar ordering, reachable search/history, persisted Turbo
+writes, FTS/unread callbacks and unsafe-message read-back.
+
+Both servers must start on **fresh, separate copies** of `parity/.seed/default`, with matching
+`parity/.env.reference` settings. Use the Rust oracle at
+`ccece30e8e160d8c3e05bf395ee55ee35962093b`:
+
+```sh
+python3 parity/native-contract.py \
+  --base http://127.0.0.1:4410 --oracle http://127.0.0.1:4400 \
+  --seed parity/.seed/default \
+  --db /path/to/native/storage/db/production.sqlite3 \
+  --oracle-db /path/to/rust/storage/db/production.sqlite3 \
+  --output /tmp/campfire-native-contract.json
+```
+
+This gate is deliberately a compatibility **subset**, not a claim that the entire Campfire suite
+passes. Its JSON records `whole_campfire_suite_passed: false` and lists uncovered behavior.
+Throughput measurements require this gate, real browser workflows and gzip content checks first.
+
+## Rust baseline
 
 A Rust implementation of [ONCE Campfire](https://github.com/basecamp/once-campfire). It uses the
 existing SQLite database, storage layout and signed/encrypted cookies, so existing installs can
@@ -8,7 +89,7 @@ One `campfire` executable replaces Ruby, Puma, Redis, Resque and Thruster, with 
 for media. The Rails frontend ships with a few [port-owned overrides](crates/assets/OVERRIDES.md).
 The app includes TLS, HTTP/2, Web Push, bot webhooks, search and Action Cable-compatible WebSockets.
 
-## Running it
+## Rust baseline deployment
 
 With [ONCE](https://github.com/basecamp/once), on a server with Docker:
 
@@ -37,10 +118,12 @@ docker run -d -p 80:80 -p 443:443 \
 - Images support amd64 and arm64. `:latest` and version tags track
   [releases](https://github.com/basecamp/once-campfire-rust/releases); `:main` tracks the main branch.
 
-## Performance
+## Published upstream leaderboard — different hardware
 
 Measured with 16 concurrent clients on an AMD Ryzen AI MAX+ 395,
 with four hardware threads allocated to each app.
+These are upstream results, not measurements of this native Zig++ target or this host.
+
 
 | HTTP workload (requests/sec) | Rails | [Django](https://github.com/basecamp/once-campfire-django) | [Laravel](https://github.com/basecamp/once-campfire-laravel) | [Express](https://github.com/basecamp/once-campfire-express) | [Elixir](https://github.com/basecamp/once-campfire-elixir) | [Go](https://github.com/basecamp/once-campfire-go) | [Rust](https://github.com/basecamp/once-campfire-rust) |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -54,7 +137,7 @@ Database scheduling, rich text rendering and cached-page gzip improvements contr
 Daniel Collin ([emoon](https://github.com/emoon)) in
 [#43](https://github.com/basecamp/once-campfire-rust/pull/43).
 
-## Development
+## Rust baseline development
 
 Check out the `reference/` submodule before building. Rust 1.98.1 is available through mise;
 native media dependencies are specified in the [`Dockerfile`](Dockerfile).
@@ -79,7 +162,7 @@ against Rails. See [`parity/SCREENS.md`](parity/SCREENS.md) for coverage and mas
 [`AGENTS.md`](AGENTS.md) for repository layout and working rules,
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributions, and [`SECURITY.md`](SECURITY.md) for security reports.
 
-## Known differences
+## Rust baseline known differences
 
 The app keeps the Rails database, storage and current cookie formats compatible. Deliberate
 behavior changes and compatibility limits are listed below.

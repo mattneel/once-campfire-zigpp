@@ -45,16 +45,16 @@ test "native key derivation Rack cookie escaping and signing golden vectors" {
         try std.testing.expectEqualStrings(text(field(c, "key_hex")), hex);
     }
     for (field(vectors, "cookie_escaping").array.items) |c| {
-        if (field(c, "raw") == .string) try std.testing.expectEqualStrings(text(field(c, "wire")), try compat.cookieEscape(a, text(field(c, "raw"))));
+        if (field(c, "raw") == .string) try std.testing.expectEqualStrings(text(field(c, "wire")), try compat.formEncode(a, text(field(c, "raw"))));
         try std.testing.expectEqualStrings(text(field(c, "parsed")), try compat.cookieUnescape(a, text(field(c, "wire"))));
     }
     const cookies = field(vectors, "signed_cookies");
     for (field(cookies, "generate").array.items) |c| {
         const wire = try secrets.signCookieValue(a, text(field(c, "name")), field(c, "value"), try expiry(field(c, "expires_at")));
-        try std.testing.expectEqualStrings(try compat.cookieEscape(a, text(field(c, "raw"))), wire);
+        try std.testing.expectEqualStrings(try compat.formEncode(a, text(field(c, "raw"))), wire);
     }
     for (field(cookies, "verify").array.items) |c| {
-        const result = try secrets.verifyCookieValue(a, text(field(c, "name")), try compat.cookieEscape(a, text(field(c, "raw"))), try compat.unixSeconds(text(field(c, "now"))));
+        const result = try secrets.verifyCookieValue(a, text(field(c, "name")), try compat.formEncode(a, text(field(c, "raw"))), try compat.unixSeconds(text(field(c, "now"))));
         const expected = field(c, "expected");
         if (expected == .null) try std.testing.expect(result == null) else try expectJson(a, expected, result.?);
     }
@@ -69,7 +69,7 @@ test "native AES256 GCM reads Rails session cookies purpose tamper expiry and le
     defer secrets.deinit();
     const cookies = field(vectors, "encrypted_cookies");
     for (field(cookies, "verify").array.items) |c| {
-        const result = try secrets.decryptCookie(a, text(field(c, "name")), try compat.cookieEscape(a, text(field(c, "raw"))), try compat.unixSeconds(text(field(c, "now"))));
+        const result = try secrets.decryptCookie(a, text(field(c, "name")), try compat.formEncode(a, text(field(c, "raw"))), try compat.unixSeconds(text(field(c, "now"))));
         const expected = field(c, "expected");
         if (expected == .null) try std.testing.expect(result == null) else try expectJson(a, expected, result.?);
     }

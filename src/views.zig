@@ -25,6 +25,8 @@ pub const Context = struct {
     user_agent: []const u8 = "",
     vapid_public_key: ?[]const u8 = null,
     app_version: []const u8 = "native Zig++",
+    flash_notice: ?[]const u8 = null,
+    flash_alert: ?[]const u8 = null,
     avatar_urls: std.AutoHashMapUnmanaged(i64, []const u8) = .empty,
 };
 
@@ -556,6 +558,23 @@ fn layoutHead(ctx: *Context, w: *Io.Writer, account: model.Account, page_title: 
     if (account.logo != null) try w.writeAll(if (body_class.len != 0 or ctx.user.isAdministrator()) " account-has-logo" else "account-has-logo");
     try w.writeAll("\" data-controller=\"local-time lightbox\"><a href=\"#main-content\" class=\"skip-navigation btn\">Skip to main content</a><nav id=\"nav\">");
 }
+fn flash(a: *assets_module.Assets, w: *Io.Writer, notice: ?[]const u8, alert: ?[]const u8) !void {
+    const value = notice orelse alert orelse return;
+    try w.writeAll("<div class=\"flash\" data-controller=\"element-removal\" data-action=\"animationend-&gt;element-removal#remove\"><div class=\"flash__inner shadow\" style=\"");
+    if (alert != null) try w.writeAll("--flash-background: var(--color-negative)");
+    try w.writeAll("\">");
+    try imageFor(a, w, if (alert != null) "alert.svg" else "check.svg", " width=\"24\" height=\"24\" aria-hidden=\"true\" class=\"colorize--white\"");
+    try w.writeAll("</span></div><span class=\"for-screen-reader\" role=\"alert\" aria-atomic=\"true\">");
+    try compat.htmlEscape(w, value);
+    try w.writeAll("</span></div>");
+}
+
+fn layoutFlash(ctx: *Context, w: *Io.Writer) !void {
+    try w.writeAll("</nav>");
+    try flash(ctx.assets, w, ctx.flash_notice, ctx.flash_alert);
+    try w.writeAll("<main id=\"main-content\">");
+}
+
 fn frameHead(w: *Io.Writer, head: []const u8) !void {
     try w.writeAll("<html><head>");
     try w.writeAll(head);
@@ -864,7 +883,7 @@ pub fn search(ctx: *Context, page: model.SearchPage) ![]const u8 {
         }
         try w.writeAll("\n");
         try w.writeAll("\n  </div>\n");
-        try w.writeAll("</nav><main id=\"main-content\">");
+        try layoutFlash(ctx, w);
         try w.writeAll("\n<div id=\"message-area\" class=\"message-area\">\n  <div class=\"message-area--empty min-width center\">\n    <figure class=\"center pad\">\n      <img aria-hidden=\"true\" class=\"colorize--black translucent\" src=\"");
         try compat.htmlEscape(w, try asset(ctx, "search.svg"));
         try w.writeAll("\" />\n    </figure>\n  </div>\n\n  <div id=\"search-results\" class=\"messages searches__results\" data-controller=\"search-results\" data-search-results-target=\"messages\" data-search-results-me-class=\"message--me\" data-search-results-threaded-class=\"message--threaded\" data-search-results-mentioned-class=\"message--mentioned\" data-search-results-formatted-class=\"message--formatted\">");
@@ -1033,7 +1052,7 @@ pub fn room(ctx: *Context, page: model.RoomPage) ![]const u8 {
     } else {
         try layoutHead(ctx, w, page.account, page.room.display_name, "sidebar", head);
         try nav(ctx, w, page.room, page.account);
-        try w.writeAll("</nav><main id=\"main-content\">");
+        try layoutFlash(ctx, w);
         try w.writeAll("\n<div id=\"message-area\" class=\"message-area\" contents=\"true\" data-controller=\"messages presence drop-target\" data-action=\"turbo:before-stream-render@document-&gt;messages#beforeStreamRender keydown.up@document-&gt;messages#editMyLastMessage dragenter-&gt;drop-target#dragenter dragover-&gt;drop-target#dragover drop-&gt;drop-target#drop visibilitychange@document-&gt;presence#visibilityChanged\" data-messages-first-of-day-class=\"message--first-of-day\" data-messages-formatted-class=\"message--formatted\" data-messages-me-class=\"message--me\" data-messages-mentioned-class=\"message--mentioned\" data-messages-threaded-class=\"message--threaded\" data-messages-page-url-value=\"");
         try compat.htmlEscape(w, try absolute(ctx, try fmt(ctx.allocator, "/rooms/{d}/messages", .{page.room.id})));
         try w.writeAll("\">");
@@ -1212,7 +1231,7 @@ pub fn sidebar(ctx: *Context, page: model.Sidebar) ![]const u8 {
         try w.writeAll("</body></html>");
     } else {
         try layoutHead(ctx, w, page.account, "Campfire", "", "");
-        try w.writeAll("</nav><main id=\"main-content\">");
+        try layoutFlash(ctx, w);
         try sidebarContent(ctx, w, page);
         try w.writeAll("<footer id=\"footer\"></footer></main><aside id=\"sidebar\" data-controller=\"toggle-class\" data-toggle-class-toggle-class=\"open\"></aside>");
         try layoutFoot(ctx, w);
@@ -1251,13 +1270,7 @@ pub fn login(allocator: Allocator, a: *assets_module.Assets, account: model.Acco
     try w.writeAll("<meta name=\"turbo-visit-control\" content=\"reload\"></head><body class=\"");
     if (account.logo != null) try w.writeAll("account-has-logo");
     try w.writeAll("\" data-controller=\"local-time lightbox\"><a href=\"#main-content\" class=\"skip-navigation btn\">Skip to main content</a><nav id=\"nav\"></nav>");
-    if (alert) |value| {
-        try w.writeAll("<div class=\"flash\" data-controller=\"element-removal\" data-action=\"animationend-&gt;element-removal#remove\"><div class=\"flash__inner shadow\" style=\"--flash-background: var(--color-negative)\">");
-        try imageFor(a, w, "alert.svg", " width=\"24\" height=\"24\" aria-hidden=\"true\" class=\"colorize--white\"");
-        try w.writeAll("</span></div><span class=\"for-screen-reader\" role=\"alert\" aria-atomic=\"true\">");
-        try compat.htmlEscape(w, value);
-        try w.writeAll("</span></div>");
-    }
+    try flash(a, w, null, alert);
     try w.writeAll("<main id=\"main-content\">");
     try w.writeAll("<section class=\"txt-align-center\">\n  <div class=\"panel ");
     if (alert != null) {
@@ -1482,7 +1495,7 @@ pub fn welcome(ctx: *Context) ![]const u8 {
     } else {
         const account = try ctx.db.account(ctx.allocator, ctx.io);
         try layoutHead(ctx, w, account, "No rooms yet", "sidebar", "");
-        try w.writeAll("</nav><main id=\"main-content\">");
+        try layoutFlash(ctx, w);
     }
     try w.writeAll("<div id=\"message-area\" class=\"message-area\"><div class=\"message-area--empty min-width center\"><figure class=\"center pad\">");
     try image(ctx, w, "messages-empty.svg", " aria-hidden=\"true\" class=\"colorize--black translucent\"");
@@ -1510,7 +1523,7 @@ pub fn roomNotFound(ctx: *Context) ![]const u8 {
     } else {
         const account = try ctx.db.account(ctx.allocator, ctx.io);
         try layoutHead(ctx, w, account, "Campfire", "", "");
-        try w.writeAll("</nav><main id=\"main-content\">");
+        try layoutFlash(ctx, w);
     }
     try w.writeAll("<turbo-frame id=\"composer-frame\"><span class=\"composer__input input input--actor shake margin-block-end txt-negative txt-align-center\" style=\"--input-border-color: var(--color-negative)\"><span>This room was deleted.</span></span></turbo-frame>");
     if (ctx.frame_id != null) {

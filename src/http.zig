@@ -17,6 +17,7 @@ const compression = zix.utils.compression;
 const c = @import("c");
 
 const Rate = struct { count: u64, expires: i64 };
+const Flash = struct { notice: ?[]const u8 = null, alert: ?[]const u8 = null };
 pub const App = struct {
     allocator: Allocator,
     db: database.Database,
@@ -70,6 +71,7 @@ const Reply = struct {
     conditional: bool = true,
     page: bool = false,
     negotiated: bool = false,
+    provenance: bool = true,
     content_length: ?usize = null,
     headers: []const storage_module.Header = &.{},
 };
@@ -94,7 +96,8 @@ const Request = struct {
         return std.mem.eql(u8, self.method, "GET") or std.mem.eql(u8, self.method, "HEAD");
     }
 
-    fn viewContext(self: *Request) views.Context {
+    fn viewContext(self: *Request) !views.Context {
+        const flash = try self.consumeFlash();
         return .{
             .allocator = self.allocator,
             .io = self.io,
@@ -108,6 +111,8 @@ const Request = struct {
             .user_agent = self.raw.header("user-agent") orelse "",
             .vapid_public_key = self.app.vapid_public_key,
             .app_version = self.app.app_version,
+            .flash_notice = flash.notice,
+            .flash_alert = flash.alert,
         };
     }
 
@@ -149,6 +154,21 @@ const Request = struct {
         const wire = try self.app.secrets.encryptCookie(self.allocator, self.io, "_campfire_session", .{ .object = state.* }, expires);
         return self.cookie("_campfire_session", wire, true, expires);
     }
+    fn consumeFlash(self: *Request) !Flash {
+        var state = try self.sessionState();
+        var result: Flash = .{};
+        if (state.get("flash")) |value| {
+            if (value == .object) if (value.object.get("flashes")) |flashes| {
+                if (flashes == .object) {
+                    result.notice = jsonString(flashes.object.get("notice"));
+                    result.alert = jsonString(flashes.object.get("alert"));
+                }
+            };
+            _ = state.swapRemove("flash");
+            try self.saveState(&state);
+        }
+        return result;
+    }
 
     fn login(self: *Request, status: u16, alert: ?[]const u8) !Reply {
         if (!accepts(self.raw, "text/html")) return error.NotAcceptable;
@@ -181,7 +201,7 @@ pub fn handle(raw: *Http.Request, response: *Http.Response, context: *Http.Conte
         .now = now,
         .now_unix = try compatibility.unixSeconds(now),
     };
-    const reply = dispatch(&request) catch |err| failure(err);
+    const reply = dispatch(&request) catch |err| failure(&request, err);
     try finish(&request, reply);
 }
 
@@ -226,16 +246,8 @@ fn dispatch(r: *Request) !Reply {
         }
     }
     if (session_new) {
-        var state = try r.sessionState();
-        var alert: ?[]const u8 = null;
-        if (state.get("flash")) |flash| if (flash == .object) {
-            if (flash.object.get("flashes")) |flashes| {
-                if (flashes == .object) alert = jsonString(flashes.object.get("alert"));
-            }
-            _ = state.swapRemove("flash");
-            try r.saveState(&state);
-        };
-        return r.login(200, alert);
+        const flash = try r.consumeFlash();
+        return r.login(200, flash.alert);
     }
     if (session_create) {
         if (try r.app.rateLimit(r.io, r.remote_ip, r.now_unix)) return r.login(429, "Too many requests or unauthorized.");
@@ -278,14 +290,14 @@ fn dispatch(r: *Request) !Reply {
     if (std.mem.eql(u8, r.path, "/") and r.get()) {
         const room = try r.app.db.visitedRoom(r.allocator, r.io, user.id, lastRoom(r));
         if (room) |found| return r.redirect(try std.fmt.allocPrint(r.allocator, "/rooms/{d}", .{found.id}));
-        var context = r.viewContext();
-        return .{ .body = try views.welcome(&context), .page = true, .negotiated = true };
+        var context = try r.viewContext();
+        return .{ .body = try views.welcome(&context), .page = context.frame_id == null, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/users/me/sidebar") and r.get()) {
         if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
         const page = try r.app.db.sidebar(r.allocator, r.io, user.id);
-        var context = r.viewContext();
-        return .{ .body = try views.sidebar(&context, page), .page = true, .negotiated = true };
+        var context = try r.viewContext();
+        return .{ .body = try views.sidebar(&context, page), .page = context.frame_id == null, .negotiated = true };
     }
     if (std.mem.eql(u8, r.path, "/searches") or std.mem.eql(u8, r.path, "/searches/clear")) {
         const q = if (r.parameters.get("q")) |value| switch (value) {
@@ -296,13 +308,13 @@ fn dispatch(r: *Request) !Reply {
         const page = try r.app.db.search(r.allocator, r.io, user.id, q, lastRoom(r));
         if (std.mem.eql(u8, r.path, "/searches") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
-            var context = r.viewContext();
-            return .{ .body = try views.search(&context, page), .page = true, .negotiated = true };
+            var context = try r.viewContext();
+            return .{ .body = try views.search(&context, page), .page = context.frame_id == null, .negotiated = true };
         }
         if (std.mem.eql(u8, r.path, "/searches") and std.mem.eql(u8, r.method, "POST")) {
             const recorded = q orelse return error.InvalidSearchQuery;
             const normalized = try r.app.db.recordSearch(r.allocator, r.io, user.id, recorded, r.now);
-            return r.redirect(try std.fmt.allocPrint(r.allocator, "/searches?q={s}", .{try compatibility.urlEncode(r.allocator, normalized)}));
+            return r.redirect(try std.fmt.allocPrint(r.allocator, "/searches?q={s}", .{try compatibility.formEncode(r.allocator, normalized)}));
         }
         if (std.mem.eql(u8, r.path, "/searches/clear") and std.mem.eql(u8, r.method, "DELETE")) {
             try r.app.db.clearSearch(r.io, user.id);
@@ -338,8 +350,8 @@ fn dispatch(r: *Request) !Reply {
             const existing = cookieValue(r.raw.header("cookie"), "last_room");
             const room_text = try std.fmt.allocPrint(r.allocator, "{d}", .{room_id});
             if (existing == null or !std.mem.eql(u8, existing.?, room_text)) try r.cookie("last_room", room_text, false, try compatibility.permanentExpires(r.now_unix));
-            var context = r.viewContext();
-            return .{ .body = try views.room(&context, page), .page = true, .negotiated = true };
+            var context = try r.viewContext();
+            return .{ .body = try views.room(&context, page), .page = context.frame_id == null, .negotiated = true };
         }
         if (std.mem.eql(u8, action, "/messages") and r.get()) {
             if (!accepts(r.raw, "text/html")) return error.NotAcceptable;
@@ -347,7 +359,7 @@ fn dispatch(r: *Request) !Reply {
             const after = if (before == null) try pageAnchor(r.parameters.get("after")) else null;
             const messages = try r.app.db.messagePage(r.allocator, r.io, user.id, room_id, before, after);
             if (messages.len == 0) return .{ .status = 204, .conditional = false };
-            var context = r.viewContext();
+            var context = try r.viewContext();
             var modified: i64 = 0;
             for (messages) |message| modified = @max(modified, try compatibility.unixSeconds(message.updated_at));
             return .{ .body = try views.messages(&context, messages), .last_modified = modified, .negotiated = true };
@@ -366,12 +378,12 @@ fn dispatch(r: *Request) !Reply {
             const client_id = if (message.get("client_message_id")) |id| id.str() else null;
             const created = r.app.db.createMessage(r.allocator, r.io, user.id, room_id, canonical, client_id, r.now) catch |err| {
                 if (err == error.NotFound) {
-                    var context = r.viewContext();
-                    return .{ .body = try views.roomNotFound(&context), .page = true, .negotiated = true };
+                    var context = try r.viewContext();
+                    return .{ .body = try views.roomNotFound(&context), .page = context.frame_id == null, .negotiated = true };
                 }
                 return err;
             };
-            var context = r.viewContext();
+            var context = try r.viewContext();
             return .{ .body = try views.created(&context, created), .content_type = "text/vnd.turbo-stream.html; charset=utf-8", .negotiated = true };
         }
     }
@@ -418,7 +430,7 @@ fn finish(r: *Request, original: Reply) !void {
     var reply = original;
     var entity = reply.body;
     var tag = reply.etag;
-    if (tag == null and reply.last_modified == null and entity.len != 0 and (reply.status == 200 or reply.status == 201) and reply.conditional) {
+    if (tag == null and entity.len != 0 and (reply.status == 200 or reply.status == 201) and reply.conditional) {
         var digest: [32]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(entity, &digest, .{});
         tag = try std.fmt.allocPrint(r.allocator, "W/\"{x}\"", .{digest[0..16]});
@@ -427,6 +439,7 @@ fn finish(r: *Request, original: Reply) !void {
         const fresh = if (r.raw.header("if-none-match")) |given| if (tag) |etag| etagMatches(given, etag) else false else if (r.raw.header("if-modified-since")) |given| if (reply.last_modified) |modified| std.mem.eql(u8, given, try httpDate(r.allocator, modified)) else false else false;
         if (fresh) {
             reply.status = 304;
+            reply.negotiated = false;
             entity = "";
         }
     }
@@ -452,21 +465,28 @@ fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]c
         try header.writer.print("Content-Length: {d}\r\n", .{if (encoding != null) entity.len else reply.content_length orelse entity.len});
     }
     try header.writer.print("Date: {s}\r\n", .{try httpDate(r.allocator, r.now_unix)});
-    try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nX-XSS-Protection: 0\r\nX-Permitted-Cross-Domain-Policies: none\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
-    try header.writer.print("X-Version: {s}\r\n", .{r.app.app_version});
-    if (r.app.git_revision) |revision| try header.writer.print("X-Rev: {s}\r\n", .{revision});
+    if (reply.provenance) try header.writer.writeAll("X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\nX-XSS-Protection: 0\r\nX-Permitted-Cross-Domain-Policies: none\r\nReferrer-Policy: strict-origin-when-cross-origin\r\n");
+    if (reply.provenance) {
+        try header.writer.print("X-Version: {s}\r\n", .{r.app.app_version});
+        if (r.app.git_revision) |revision| try header.writer.print("X-Rev: {s}\r\n", .{revision});
+    }
     if (reply.page and r.app.preload_link.len != 0) try header.writer.print("Link: {s}\r\n", .{r.app.preload_link});
     if (reply.cache_control) |cache| {
         try header.writer.print("Cache-Control: {s}\r\n", .{cache});
-    } else if (!hasHeader(reply.headers, "cache-control")) {
+    } else if (reply.provenance and !hasHeader(reply.headers, "cache-control")) {
         try header.writer.print("Cache-Control: {s}\r\n", .{if (tag != null or reply.last_modified != null) "max-age=0, private, must-revalidate" else "no-cache"});
     }
     if (tag) |etag| try header.writer.print("ETag: {s}\r\n", .{etag});
     if (reply.last_modified) |at| try header.writer.print("Last-Modified: {s}\r\n", .{try httpDate(r.allocator, at)});
     if (encoding) |coding| try header.writer.print("Content-Encoding: {s}\r\n", .{coding});
     const vary_accept = reply.negotiated and r.parameters.get("format") == null and validAccept(r.raw);
-    const vary_encoding = compression.shouldCompress(reply.body.len, reply.content_type, 256);
-    if (vary_accept or vary_encoding) try header.writer.print("Vary: {s}\r\n", .{if (vary_accept and vary_encoding) "Accept,Accept-Encoding" else if (vary_accept) "Accept" else "Accept-Encoding"});
+    if (r.get()) {
+        try header.writer.print("Vary: {s}\r\n", .{if (vary_accept) "Accept,Accept-Encoding" else "Accept-Encoding"});
+    } else {
+        // The front compressor prepends its header on cache-bypassing writes.
+        try header.writer.writeAll("Vary: Accept-Encoding\r\n");
+        if (vary_accept) try header.writer.writeAll("Vary: Accept,Accept-Encoding\r\n");
+    }
     if (r.response.extra_buf) |headers| for (headers[0..r.response.extra_len]) |h| try header.writer.print("{s}: {s}\r\n", .{ h.name, h.value });
     for (reply.headers) |h| {
         if (std.ascii.eqlIgnoreCase(h.name, "content-length") or std.ascii.eqlIgnoreCase(h.name, "content-type")) continue;
@@ -480,18 +500,28 @@ fn finishUnencoded(r: *Request, reply: Reply, entity: []const u8, encoding: ?[]c
     r.response.bytes_written = if (std.mem.eql(u8, r.method, "HEAD")) 0 else entity.len;
 }
 
-fn failure(err: anyerror) Reply {
-    return switch (err) {
-        error.NotFound => .{ .status = 404, .content_type = "text/plain; charset=utf-8", .body = "Not Found", .conditional = false },
-        error.Unauthorized => .{ .status = 403, .content_type = "text/plain; charset=utf-8", .body = "Forbidden", .conditional = false },
-        error.NotAcceptable => .{ .status = 406, .content_type = "text/plain; charset=utf-8", .body = "Not Acceptable", .conditional = false },
-        error.InvalidAuthenticityToken => .{ .status = 422, .content_type = "text/plain; charset=utf-8", .body = "Invalid authenticity token", .conditional = false },
-        error.BodyTooLarge => .{ .status = 413, .content_type = "text/plain; charset=utf-8", .body = "Payload Too Large", .conditional = false },
-        error.ParameterMissing, error.InvalidEncoding, error.ParameterType, error.TooDeep, error.TooManyParameters, error.InvalidBody => .{ .status = 400, .content_type = "text/plain; charset=utf-8", .body = "Bad Request", .conditional = false },
+fn failure(r: *Request, err: anyerror) Reply {
+    const status: u16 = switch (err) {
+        error.NotFound => 404,
+        error.Unauthorized => 403,
+        error.NotAcceptable => 406,
+        error.InvalidAuthenticityToken => 422,
+        error.BodyTooLarge => 413,
+        error.ParameterMissing, error.InvalidEncoding, error.ParameterType, error.TooDeep, error.TooManyParameters, error.InvalidBody => 400,
         else => blk: {
             std.log.err("native Campfire request: {s}", .{@errorName(err)});
-            break :blk .{ .status = 500, .content_type = "text/plain; charset=utf-8", .body = "Internal Server Error", .conditional = false };
+            break :blk 500;
         },
+    };
+    var path_buffer: [16]u8 = undefined;
+    const path = std.fmt.bufPrint(&path_buffer, "/{d}.html", .{status}) catch unreachable;
+    const body = if (r.app.assets.lookup(path)) |asset| asset.body else "";
+    return .{
+        .status = status,
+        .body = if (std.mem.eql(u8, r.method, "HEAD")) "" else body,
+        .content_type = "text/html; charset=UTF-8",
+        .conditional = false,
+        .provenance = false,
     };
 }
 
@@ -713,15 +743,14 @@ fn hasHeader(headers: []const storage_module.Header, name: []const u8) bool {
 fn validAccept(raw: *Http.Request) bool {
     const accept = raw.header("accept") orelse "";
     const present = std.mem.trim(u8, accept, " \t\r\n").len != 0;
-    if (std.ascii.eqlIgnoreCase(raw.header("x-requested-with") orelse "", "XMLHttpRequest") and (present or (raw.header("content-type") orelse "").len != 0)) return true;
+    const content_type: []const u8 = raw.header("content-type") orelse "";
+    if (std.ascii.eqlIgnoreCase(raw.header("x-requested-with") orelse "", "XMLHttpRequest") and (present or content_type.len != 0)) return true;
     if (!present) return false;
-    var parts = std.mem.splitScalar(u8, accept, ',');
-    var first = true;
-    while (parts.next()) |part| {
-        const trimmed = std.mem.trim(u8, part, " \t\r\n");
-        if (!first and std.mem.startsWith(u8, trimmed, "*/*")) return false;
-        if (std.mem.eql(u8, trimmed, "*/*") and parts.index != null) return false;
-        first = false;
+    var suffix: [4]u8 = @splat(0);
+    for (accept) |char| {
+        if (std.ascii.isWhitespace(char)) continue;
+        suffix = .{ suffix[1], suffix[2], suffix[3], char };
+        if (std.mem.eql(u8, &suffix, ",*/*") or std.mem.eql(u8, &suffix, "*/*,")) return false;
     }
     return true;
 }
