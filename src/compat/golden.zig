@@ -166,3 +166,27 @@ test "native HTML URI escaping permanent calendar expiry integer cookies and see
     try std.testing.expectEqualStrings(transforms, (try secrets.verifyVariationKey(a, variation, now)).?);
     try std.testing.expect((try secrets.verifyBlobSignedId(a, variation, now)) == null);
 }
+
+test "native ActiveStorage disk key signing and verification golden vectors" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const vectors = try load(a, "vectors/rails_compat.json");
+    var secrets = try compat.Secrets.init(a, text(field(vectors, "secret_key_base")));
+    defer secrets.deinit();
+    const app = field(vectors, "app_verifiers");
+    for (field(app, "generate").array.items) |c| {
+        const purpose = optionalText(field(c, "purpose")) orelse continue;
+        if (!std.mem.eql(u8, purpose, "blob_key")) continue;
+        const key = try secrets.signDiskKey(a, text(field(c, "data_json")), (try expiry(field(c, "expires_at"))).?);
+        try std.testing.expectEqualStrings(text(field(c, "message")), key);
+    }
+    for (field(app, "verify").array.items) |c| {
+        const purpose = optionalText(field(c, "purpose")) orelse continue;
+        if (!std.mem.eql(u8, purpose, "blob_key")) continue;
+        const actual = try secrets.verifyDiskKey(a, text(field(c, "message")), try compat.unixSeconds(text(field(c, "now"))));
+        const expected = field(c, "expected_json");
+        if (expected == .null) try std.testing.expect(actual == null)
+        else try std.testing.expectEqualStrings(text(expected), actual.?);
+    }
+}
